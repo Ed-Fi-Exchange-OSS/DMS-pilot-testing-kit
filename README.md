@@ -1,5 +1,7 @@
 # DMS-pilot-testing-kit
 
+[![OpenSSF Scorecard](https://api.securityscorecards.dev/projects/github.com/Ed-Fi-Exchange-OSS/DMS-pilot-testing-kit/badge)](https://securityscorecards.dev/viewer/?uri=github.com/Ed-Fi-Exchange-OSS/DMS-pilot-testing-kit)
+
 Tools to assist with local pilot testing of the [Ed-Fi API
 v8](https://docs.ed-fi.org/reference/ed-fi-api/8/), aka "DMS".
 
