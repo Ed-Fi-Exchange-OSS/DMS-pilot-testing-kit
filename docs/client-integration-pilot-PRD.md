@@ -63,8 +63,9 @@ harness.
   endpoint in under one hour of setup effort, including reading the
   documentation.
 - Results are comparable across participants, because every participant runs
-  the same Data Standard version, the same claim sets, the same reporting
-  scripts, and one of only two published database templates.
+  the same Data Standard version, the same reporting scripts, one of only two
+  published database templates, and the same claim set as every other
+  participant of their integration shape.
 - Feedback is cheap to give, because the kit produces the metrics the program
   wants to collect without asking the participant to build tooling.
 - The environment is disposable: a participant can reset to a known-clean state
@@ -194,7 +195,7 @@ graph TD
 - **Bootstrapping:** because an integration credential must be scoped to an
   education organization, and the minimal template contains none, startup
   creates a broad-access bootstrap credential and uses it to create a baseline
-  SEA / LEA / school hierarchy. See sections 3.5 and 3.12.
+  SEA / LEA / school hierarchy. See sections 3.5 and 3.13.
 
 ## 3. Functional Requirements
 
@@ -294,9 +295,10 @@ complete and identical across participants.
 - **FR-FEAT-5:** The stack SHALL enable Profiles.
 - **FR-FEAT-6:** The stack SHALL enable ETag support.
 - **FR-FEAT-7:** The stack SHALL enable limit/offset paging.
-- **FR-FEAT-8:** The stack SHALL use the standard claim sets, unmodified, so
+- **FR-FEAT-8:** The stack SHALL leave the standard claim sets unmodified, so
   that authorization behavior observed by a participant matches the documented
-  default.
+  default. The kit MAY add claim sets that the platform does not supply, as
+  specified in section 3.6, but SHALL NOT alter the ones it does.
 - **FR-FEAT-9:** Any feature in this section that cannot be enabled in the
   pilot release SHALL be recorded as a known limitation in the kit's
   documentation rather than silently omitted.
@@ -308,15 +310,15 @@ organization, which means at least one SEA has to exist before that credential
 can be created. A freshly initialized minimal-template environment contains
 none. Startup therefore has to break the cycle itself: create an administrative
 credential broad enough to write education organizations, then use it to create
-the baseline hierarchy. The `.http` file in section 3.12 remains the tool for
+the baseline hierarchy. The `.http` file in section 3.13 remains the tool for
 adding *more* organizations afterwards; it is no longer the only way to get the
 first one.
 
 - **FR-BOOT-1:** Startup SHALL create a bootstrap client credential through
-  CMS, with access permissions broad enough to create education organizations,
-  without participant intervention.
+  CMS, using the "Ed-Fi Sandbox" claim set per FR-CLAIM-1, without participant
+  intervention.
 - **FR-BOOT-2:** Startup SHALL use the bootstrap credential to create the
-  baseline education organization hierarchy defined in section 3.12.
+  baseline education organization hierarchy defined in section 3.13.
 - **FR-BOOT-3:** Bootstrapping SHALL complete before startup reports success,
   so that the environment a participant first touches already contains an SEA
   to scope an integration credential against.
@@ -331,7 +333,7 @@ first one.
 - **FR-BOOT-7:** The bootstrap credential SHALL be labelled as an
   administrative credential and SHALL NOT be presented as the credential to use
   for integration testing; participants SHALL use a scoped credential from
-  section 3.6 for that.
+  section 3.7 for that.
 - **FR-BOOT-8:** Documentation SHALL state the bootstrap credential's
   permissions and SHALL warn that its breadth is not representative of a
   production client, so that authorization behavior is not measured through it.
@@ -350,12 +352,61 @@ first one.
 - **FR-BOOT-13:** Documentation SHALL explain how to delete or disable the
   bootstrap credential after setup, for participants who do not want a
   broad-access credential to persist in their environment.
-- **FR-BOOT-14:** Bootstrapping SHOULD use a standard claim set where one
-  provides sufficient breadth, so that FR-FEAT-8 is not compromised. Where no
-  standard claim set suffices, the deviation SHALL be documented and SHALL
-  apply only to the bootstrap credential, never to participant credentials.
+- **FR-BOOT-14:** Bootstrapping SHALL also provision the Data Warehouse claim
+  set per FR-CLAIM-8, so that a downstream analytics participant has a usable
+  claim set available before they request a credential.
 
-### 3.6 Credential Provisioning
+### 3.6 Claim Sets and Authorization
+
+Claim sets are the one place where this kit must add to the platform rather
+than only configure it. Bootstrapping needs breadth, participant credentials
+need to be representative of a real client, and the downstream analytics case
+has no standard claim set at all.
+
+- **FR-CLAIM-1:** Bootstrapping SHALL use the standard "Ed-Fi Sandbox" claim
+  set for the bootstrap credential, which provides the breadth needed to create
+  education organizations.
+- **FR-CLAIM-2:** Participant integration credentials SHALL NOT use the
+  bootstrap claim set. Each SHALL receive a claim set matched to its
+  integration shape, so that observed authorization behavior is representative
+  of a production client.
+- **FR-CLAIM-3:** SIS integrations SHALL use the standard "SIS Vendor" claim
+  set.
+- **FR-CLAIM-4:** Assessment integrations SHALL use the standard "Assessment
+  Vendor" claim set.
+- **FR-CLAIM-5:** Because no standard claim set grants broad read access, the
+  kit SHALL provision a "Data Warehouse" claim set granting read access to all
+  resources, for downstream data warehouse and analytics integrations.
+- **FR-CLAIM-6:** The Data Warehouse claim set SHALL grant read actions only.
+  It SHALL NOT grant create, update, or delete on any resource, so that an
+  extraction credential cannot mutate the data it reads.
+- **FR-CLAIM-7:** The kit SHALL NOT modify any standard claim set. The Data
+  Warehouse claim set SHALL be an addition, leaving the standard set intact per
+  FR-FEAT-8.
+- **FR-CLAIM-8:** Provisioning of the Data Warehouse claim set SHALL be part of
+  bootstrapping, SHALL be idempotent, and SHALL fail startup with an actionable
+  message rather than leaving a warehouse participant without a usable claim
+  set.
+- **FR-CLAIM-9:** The Data Warehouse claim set definition SHALL be held in
+  version control in a reviewable form, so that its permissions are auditable
+  and reproducible across participants rather than assembled at runtime by
+  opaque steps.
+- **FR-CLAIM-10:** Credential provisioning SHALL accept the claim set as a
+  parameter, SHALL default to the one matching the participant's declared
+  integration shape, and SHALL reject an unrecognized claim set with an
+  actionable message.
+- **FR-CLAIM-11:** Documentation SHALL state which claim set each integration
+  shape uses, and SHALL state plainly that the Data Warehouse claim set is a
+  kit-provided addition rather than a standard Ed-Fi claim set.
+- **FR-CLAIM-12:** Documentation SHALL invite feedback on the Data Warehouse
+  claim set specifically, since the absence of a read-all claim set in the
+  platform is itself a finding the pilot can substantiate.
+- **FR-CLAIM-13:** Where the comparative ODS/API stack is enabled, equivalent
+  claim sets SHALL be used for each integration shape, the Data Warehouse claim
+  set SHALL be provisioned there as well, and documentation SHALL note any
+  naming or capability differences between the two platforms.
+
+### 3.7 Credential Provisioning
 
 - **FR-CRED-1:** The kit SHALL provide scripts that register a CMS client and
   generate client integration API credentials without the participant calling
@@ -367,16 +418,16 @@ first one.
   additional credentials, and SHALL NOT silently overwrite an existing vendor or
   application registration.
 - **FR-CRED-4:** Provisioning SHALL associate the generated credential with the
-  standard claim set and with the education organization identifiers required
-  for the participant's data, and the documentation SHALL explain how to change
-  that association.
+  claim set selected per section 3.6 and with the education organization
+  identifiers required for the participant's data, and the documentation SHALL
+  explain how to change that association.
 - **FR-CRED-5:** The kit SHALL document how to obtain an access token from the
   built-in OAuth2 token endpoint using the generated credential.
 - **FR-CRED-6:** Provisioning scripts SHALL fail with an actionable message when
   CMS is not yet reachable or not yet initialized.
 - **FR-CRED-7:** Provisioning SHALL support read-oriented integrations as well
-  as write-oriented ones, and documentation SHALL identify which standard claim
-  set to use for a downstream extraction client.
+  as write-oriented ones, issuing the Data Warehouse claim set for a downstream
+  extraction client per FR-CLAIM-5.
 - **FR-CRED-8:** When the populated template is in use, provisioning SHALL
   associate the credential with the education organizations present in that
   template, so that a participant's first authorized request succeeds without
@@ -389,7 +440,7 @@ first one.
   education organization identifiers, but SHALL allow overriding them for
   participants who have added organizations of their own.
 
-### 3.7 Routing and Request Handling
+### 3.8 Routing and Request Handling
 
 - **FR-ROUTE-1:** NGINX SHALL be the single ingress for all participant-facing
   services and SHALL route by configurable path prefix.
@@ -415,7 +466,7 @@ first one.
 - **FR-ROUTE-9:** When a downstream service is unavailable, NGINX SHOULD return
   a clear HTTP 503 rather than an opaque proxy error.
 
-### 3.8 Comparative ODS/API Testing
+### 3.9 Comparative ODS/API Testing
 
 - **FR-COMP-1:** The kit SHALL provide an Ed-Fi ODS/API 7.3.2 environment in the
   same Compose project, selected by an opt-in `odsapi` Compose profile. This
@@ -436,7 +487,7 @@ first one.
 - **FR-COMP-7:** Documentation SHALL state that comparative testing is optional
   and SHALL describe its additional host resource cost.
 
-### 3.9 Logging
+### 3.10 Logging
 
 - **FR-LOG-1:** Logging SHALL be configured deliberately to capture what the
   program's evaluation criteria require: request outcomes, error detail, and
@@ -447,7 +498,7 @@ first one.
   host-mounted directory so that they survive container removal and can be read
   by the reporting scripts.
 - **FR-LOG-4:** Logs SHALL be in a machine-parseable format sufficient for
-  section 3.10 without heuristic text scraping.
+  section 3.11 without heuristic text scraping.
 - **FR-LOG-5:** Logs SHALL include a correlation identifier per request where
   the platform supports one, so that a failed record can be traced across
   services.
@@ -459,7 +510,7 @@ first one.
   same fidelity as write activity, so that downstream extraction runs can be
   measured.
 
-### 3.10 Metrics and Reporting
+### 3.11 Metrics and Reporting
 
 - **FR-MET-1:** The kit SHALL provide scripted log parsing that produces a run
   report without manual tabulation.
@@ -473,9 +524,9 @@ first one.
 - **FR-MET-5:** The report SHOULD break error counts down by HTTP status and by
   resource, so that a participant can find their largest problem first.
 - **FR-MET-6:** The report SHALL record the environment's identifying
-  configuration — image tags, Data Standard version, template selection,
-  profile selection, and whether the `/data/v3` rewrite and rate limiting were
-  active — so that results are interpretable months later.
+  configuration — image tags, Data Standard version, template selection, claim
+  set used, profile selection, and whether the `/data/v3` rewrite and rate
+  limiting were active — so that results are interpretable months later.
 - **FR-MET-7:** The report SHALL be emitted as a local file in both a
   human-readable and a machine-readable form, in a documented location.
 - **FR-MET-8:** Reporting SHALL be runnable repeatedly against the same logs
@@ -498,7 +549,7 @@ first one.
   — bootstrapping, credential provisioning, and smoke tests — from
   participant-attributed counts and durations, per FR-BOOT-12.
 
-### 3.11 Smoke Test and Request Examples
+### 3.12 Smoke Test and Request Examples
 
 - **FR-TEST-1:** The kit SHALL provide a `.http` request file that demonstrates
   the core interactions: token acquisition, a Discovery API call, a descriptor
@@ -520,12 +571,12 @@ first one.
 - **FR-TEST-7:** The request file SHALL include a write example that references
   an existing student and education organization, illustrating the assessment
   integration case. The education organization MAY come from the hierarchy in
-  section 3.12; the student requires the populated template.
+  section 3.13; the student requires the populated template.
 - **FR-TEST-8:** Examples that depend on pre-existing data SHALL state which
   template they require, and SHOULD fail with a recognizable message rather
   than an ambiguous empty result when run against the minimal template.
 
-### 3.12 Sample Education Organization Hierarchy
+### 3.13 Sample Education Organization Hierarchy
 
 This section defines the baseline hierarchy that bootstrapping creates
 (FR-BOOT-2), and specifies a `.http` file covering the same requests. The file
@@ -556,7 +607,7 @@ created on their behalf rather than inheriting an opaque seeded state.
   creating duplicate education organizations, including against an environment
   where bootstrapping has already created the baseline.
 - **FR-EDORG-7:** The hierarchy SHALL use fixed, documented identifiers, and
-  documentation SHALL list them, so that the request examples in section 3.11,
+  documentation SHALL list them, so that the request examples in section 3.12,
   credential provisioning, and a participant's own client can all refer to the
   same organizations.
 - **FR-EDORG-8:** Those identifiers SHALL NOT collide with the education
@@ -589,7 +640,7 @@ created on their behalf rather than inheriting an opaque seeded state.
   to add an organization of their own — a second LEA or an additional school —
   rather than only the fixed baseline values.
 
-### 3.13 Documentation
+### 3.14 Documentation
 
 - **FR-DOC-1:** The kit SHALL document prerequisites — Docker, host resources,
   available ports, and certificate generation — before any setup step.
@@ -608,9 +659,9 @@ created on their behalf rather than inheriting an opaque seeded state.
 - **FR-DOC-7:** Documentation SHALL be verified by following it on a clean host
   before the kit is distributed to participants, for both template selections.
 - **FR-DOC-8:** Documentation SHALL name the client integration shapes the kit
-  supports, with an explicit starting path and template recommendation for
-  each, so that a participant knows which instructions apply to them before
-  they begin.
+  supports, with an explicit starting path, template recommendation, and claim
+  set for each, so that a participant knows which instructions apply to them
+  before they begin.
 
 ## 4. Non-Functional Requirements
 
@@ -752,7 +803,7 @@ created on their behalf rather than inheriting an opaque seeded state.
 | Ed-Fi ODS Admin API | Vendor, application, and credential management for the v7 stack | Container | CMS database schema and configuration |
 | PostgreSQL (ODS/API) | Persistence for the comparative stack | Container, `odsapi` profile | Minimal or populated template initialization, separate volume |
 | PGAdmin | Database inspection for troubleshooting | Container | Preconfigured server definitions, named volume |
-| Bootstrapping | Create the broad-access bootstrap credential and the baseline education organization hierarchy during startup | Host machine, invoked by lifecycle scripts | Bootstrap credential output location, baseline hierarchy definition |
+| Bootstrapping | Create the Ed-Fi Sandbox bootstrap credential, provision the Data Warehouse claim set, and create the baseline education organization hierarchy during startup | Host machine, invoked by lifecycle scripts | Bootstrap credential output location, baseline hierarchy definition, Data Warehouse claim set definition |
 | Credential provisioning scripts | Register clients and mint scoped client integration API credentials for both platforms | Host machine | CMS API and ODS Admin API configuration surface |
 | Template provisioning | Initialize the selected minimal or populated starting data set on first run | Container entrypoint or init script | Template source artifacts, template selection setting |
 | Log mount | Durable location for API and proxy logs | Host filesystem | Configurable host path |
@@ -776,12 +827,15 @@ created on their behalf rather than inheriting an opaque seeded state.
   templates. Participant-supplied or custom-built templates are not supported.
 - Synthetic data generation tooling. The kit ships the populated template as-is
   and does not generate data at a participant-chosen scale. The fixed
-  five-organization hierarchy in section 3.12 is the only exception.
+  five-organization hierarchy in section 3.13 is the only exception.
+- Claim sets beyond those named in section 3.6. The kit provisions one addition
+  and otherwise uses standard claim sets; it is not a claim set authoring tool,
+  and participant-defined claim sets are not supported.
 - Configurable, larger, or multi-district education organization hierarchies.
   The sample hierarchy is one SEA, one LEA, and three schools, and is not
   parameterized.
 - Seeding of students, staff, enrollments, sections, or calendars on the
-  minimal template. Section 3.12 covers education organizations only;
+  minimal template. Section 3.13 covers education organizations only;
   everything below that level is the participant's data to submit, or comes
   from the populated template.
 - Data Standard versions other than 5.2, and Ed-Fi extensions or TPDM.
@@ -838,6 +892,13 @@ created on their behalf rather than inheriting an opaque seeded state.
 - **Default credentials and a self-signed certificate in a public repository**
   are appropriate only for a local environment; a participant who exposes the
   stack on a network inherits that risk (NFR-SEC-4, NFR-SEC-5).
+- **The Data Warehouse claim set is a kit invention, so warehouse
+  authorization results are not reproducible on a stock platform.** A
+  participant's read-side findings are conditioned on a claim set the Ed-Fi
+  Alliance does not publish, which limits how far those results generalize.
+  This is unavoidable — there is no standard read-all claim set — and is itself
+  a finding worth reporting (FR-CLAIM-11, FR-CLAIM-12) rather than a defect in
+  the kit.
 - **The bootstrap credential is a standing broad-access credential in every
   participant's environment.** It is necessary — a scoped credential cannot
   create the SEA it would be scoped to — but it is not representative of a
@@ -868,13 +929,10 @@ created on their behalf rather than inheriting an opaque seeded state.
 - Are participating client integrators prepared for the Ed-Fi API v8 resource
   paths, or is `/data/v3` compatibility load-bearing for most of them? This is
   a question the pilot should answer, not one the kit should assume.
-- Is there a *standard* claim set broad enough for the bootstrap credential to
-  create an SEA, or does bootstrapping require a claim set outside the standard
-  set? FR-FEAT-8 requires standard claim sets unmodified so that participants
-  observe documented authorization behavior, and FR-BOOT-14 confines any
-  deviation to the bootstrap credential — but if no standard claim set can
-  create an SEA, the kit ships something non-standard on day one and that needs
-  to be a conscious decision.
+- What exactly does "read all" mean for the Data Warehouse claim set
+  (FR-CLAIM-5)? Does it cover descriptors, change queries, and the Discovery
+  and metadata endpoints as well as resources, and does it need any Profiles
+  interaction? The claim set cannot be written without this list.
 - Can a credential in Ed-Fi API v8 be scoped to an SEA and thereby reach the
   LEA and schools beneath it, or must provisioning enumerate each education
   organization explicitly? This determines whether FR-CRED-9 is one setting or
@@ -883,8 +941,17 @@ created on their behalf rather than inheriting an opaque seeded state.
   collision (FR-EDORG-8), or recognizable values aligned to Ed-Fi
   documentation conventions? Collision-avoidance and familiarity pull in
   opposite directions here.
-- Which standard claim set is appropriate for a read-only downstream extraction
-  client (FR-CRED-7), and does one exist that grants read without write?
+- Should the Data Warehouse claim set be proposed for inclusion in the platform
+  itself? The kit having to supply one is evidence of a gap, and the pilot is
+  positioned to confirm whether downstream integrators actually need it
+  (FR-CLAIM-12).
+- Does ODS/API 7.3.2 with Admin API 2.3.2 support provisioning an equivalent
+  custom claim set, and is the definition format close enough to share one
+  source of truth with the v8 stack (FR-CLAIM-13)?
+- Does a read-all claim set in Ed-Fi API v8 still require education
+  organization scoping, or does read-all mean read-all irrespective of the
+  credential's education organization association? This affects whether
+  FR-CRED-9 applies to warehouse credentials at all.
 - Is the pilot recruiting for all three integration shapes in the same round,
   or are assessment and warehouse integrations a later wave? The answer affects
   how much of section 3.3 and FR-TEST-6 through FR-TEST-8 must land in the
@@ -944,6 +1011,15 @@ created on their behalf rather than inheriting an opaque seeded state.
   integrations have records to reference.
 - **Claim set:** The named authorization configuration that determines which
   resources and actions a credential may exercise.
+- **Ed-Fi Sandbox claim set:** A standard, broad-access claim set. Used here
+  only for the bootstrap credential, never for a participant's integration
+  credential.
+- **SIS Vendor claim set:** The standard claim set for SIS integrations.
+- **Assessment Vendor claim set:** The standard claim set for assessment
+  provider integrations.
+- **Data Warehouse claim set:** A read-all, write-nothing claim set that this
+  kit provisions because the platform does not supply one. Used for downstream
+  data warehouse and analytics integrations.
 - **Descriptor:** An Ed-Fi enumerated value set exposed through its own API
   endpoints.
 - **Education organization:** The Ed-Fi abstraction covering state agencies,
@@ -954,7 +1030,7 @@ created on their behalf rather than inheriting an opaque seeded state.
 - **LEA (Local Education Agency):** A school district, referencing an SEA as
   its parent in the sample hierarchy.
 - **Education organization hierarchy:** The parent-child chain from SEA to LEA
-  to school. Section 3.12 specifies the five-organization baseline that
+  to school. Section 3.13 specifies the five-organization baseline that
   bootstrapping creates.
 - **Bootstrap credential:** The broad-access administrative credential that
   startup creates so that the baseline education organization hierarchy can be
