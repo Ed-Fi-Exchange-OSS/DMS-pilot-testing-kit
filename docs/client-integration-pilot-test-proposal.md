@@ -9,6 +9,11 @@ undergone extensive internal testing, additional confidence can be gained by
 executing a controlled pilot using independent implementations built by the
 organizations that will depend on the platform in production.
 
+> [!TIP]
+> See [Client Integration Pilot PRD](./client-integration-pilot-PRD.md) for the
+> detailed required requirements that will drive creation of the pilot testing
+> kit.
+
 ## Client Integrations in Scope
 
 A *client integration* is any system that reads from or writes to an Ed-Fi API.

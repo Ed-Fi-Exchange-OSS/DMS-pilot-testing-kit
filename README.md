@@ -5,8 +5,11 @@
 Tools to assist with local pilot testing of the [Ed-Fi API
 v8](https://docs.ed-fi.org/reference/ed-fi-api/8/), aka "DMS".
 
-For more information on the transition from the legacy Ed-Fi ODS/API to Ed-Fi
-API v8+, see the [FAQ](https://docs.ed-fi.org/reference/roadmap/api-faq).
+* [Client Integration Pilot Test Proposal](./docs/client-integration-pilot-test-proposal.md)
+
+> [!TIP]
+> For more information on the transition from the legacy Ed-Fi ODS/API to Ed-Fi
+> API v8+, see the [FAQ](https://docs.ed-fi.org/reference/roadmap/api-faq).
 
 ## Contributing
 
@@ -14,12 +17,18 @@ The Ed-Fi Alliance welcomes code contributions from the community. Please read
 the [Ed-Fi Contribution Guidelines](https://docs.ed-fi.org/community/sdlc/code-contribution-guidelines/)
 for detailed information on how to contribute source code.
 
+> [!TIP]
+> Unlike other Ed-Fi Alliance repositories, GitHub Issues are enabled for _ALL_
+> users. Please feel free to post requests and problems as Issues in this
+> repository. In general do _not_ create [Community
+> cases](https://community.ed-fi.org) for problems with this kit.
+
 ## Repository Metadata
 
-- [Code of Conduct](./CODE_OF_CONDUCT.md)
-- [List of Contributors](./CONTRIBUTORS.md)
-- [Copyright and License Notices](./NOTICES.md)
-- [License](./LICENSE)
+* [Code of Conduct](./CODE_OF_CONDUCT.md)
+* [List of Contributors](./CONTRIBUTORS.md)
+* [Copyright and License Notices](./NOTICES.md)
+* [License](./LICENSE)
 
 ## Legal Information
 
