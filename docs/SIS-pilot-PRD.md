@@ -3,10 +3,15 @@
 ## Loose Notes / Braindump
 
 Conformance testing will be performed on systems configured for Ed-Fi Data
-Standard 5.2 with the following optional features enabled:
+Standard 5.2 with the following features available:
 
-- Metadata enabled
+- All endpoints that support the Discovery API, Resource API, and Descriptor API
+- Metadata (XSD, OpenAPI, Swagger UI)
 - Change queries
+- Profiles
+- ETags
+- Limit / offset paging
+- Standard claimsets
 
 The database will be initialized with the "minimal template" setup - no
 additional sample data.
