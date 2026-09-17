@@ -11,8 +11,7 @@ organizations that will depend on the platform in production.
 
 > [!TIP]
 > See [Client Integration Pilot PRD](./client-integration-pilot-PRD.md) for the
-> detailed required requirements that will drive creation of the pilot testing
-> kit.
+> detailed requirements that will drive creation of the pilot testing kit.
 
 ## Client Integrations in Scope
 

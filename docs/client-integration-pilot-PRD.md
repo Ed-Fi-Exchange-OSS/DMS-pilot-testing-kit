@@ -162,7 +162,7 @@ graph TD
   nginx --> cms["Ed-Fi CMS (Configuration Management Service)"]
   nginx --> pgadmin["PGAdmin"]
   nginx --> ods["ODS/API 7.3.2 (optional Compose profile)"]
-  nginx --> adminapi["ODS Admin API 2.3 (optional Compose profile)"]
+  nginx --> adminapi["ODS Admin API 2.3.2 (optional Compose profile)"]
   dms --> dmsdb[("PostgreSQL - DMS and CMS databases")]
   cms --> dmsdb
   ods --> odsdb[("PostgreSQL - ODS/API databases")]
@@ -191,7 +191,6 @@ graph TD
   the Ed-Fi sample data set and exists for downstream data warehouse and
   analytics integrations, which need data present before they can extract
   anything.
-
 - **Bootstrapping:** because an integration credential must be scoped to an
   education organization, and the minimal template contains none, startup
   creates a broad-access bootstrap credential and uses it to create a baseline
@@ -286,8 +285,8 @@ client integrations need opposite starting conditions.
 The pilot performs conformance testing, so the surface under test must be
 complete and identical across participants.
 
-- **FR-FEAT-1:** The stack SHALL expose all Data Standard 5.2 endpoints served
-  the Resources API and the Descriptors API.
+- **FR-FEAT-1:** The stack SHALL expose all endpoints defined by the Resources
+  API and the Descriptors API for Data Standard 5.2.
 - **FR-FEAT-2:** THe stack SHALL expose the Discovery API (root URL).
 - **FR-FEAT-3:** The stack SHALL expose platform metadata: XSD, OpenAPI
   specification documents, and a browsable Swagger UI.
@@ -324,9 +323,10 @@ first one.
   to scope an integration credential against.
 - **FR-BOOT-4:** Bootstrapping SHALL be idempotent: re-running startup SHALL
   NOT create duplicate credentials or duplicate education organizations.
-- **FR-BOOT-5:** When the populated template is in use, credential
-  bootstrapping SHALL still run, and hierarchy creation SHALL be skipped
-  because the template already supplies one.
+- **FR-BOOT-5:** When the populated template is in use, bootstrapping SHALL
+  check whether the baseline hierarchy from section 3.13 exists; it SHALL skip
+  hierarchy creation only when all required records are present, and SHALL
+  create the missing records otherwise.
 - **FR-BOOT-6:** Bootstrapping SHALL report the bootstrap key and secret and
   the identifiers of the organizations it created, and SHALL persist them to a
   documented local location so that they survive the terminal session.

@@ -19,7 +19,7 @@
 ### DMS Setup
 
 - [ ] Docker Compose files for simple DMS setup
-- [ ] Powershell and bash scripts to automate CMS client registration and
+- [ ] PowerShell and bash scripts to automate CMS client registration and
   generation of client integration API credentials
 - [ ] Carefully configure logging to meet program objectives
 - [ ] Scripted log parsing and metric reporting
@@ -27,7 +27,7 @@
 ### ODS/API Setup
 
 - [ ] Docker Compose files for simple ODS/API 7.3.2 setup
-- [ ] Powershell and bash scripts to automate CMS client registration and
-  generation of client integration API credentials
+- [ ] PowerShell and bash scripts to automate ODS Admin API client registration
+  and generation of client integration API credentials
 - [ ] Carefully configure logging to meet program objectives
 - [ ] Scripted log parsing and metric reporting
