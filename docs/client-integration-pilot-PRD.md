@@ -121,10 +121,14 @@ integration shapes they are building.
 - When I choose a starting data set, I want a single documented switch between
   the minimal and populated templates, so that I do not have to assemble test
   data myself.
-- When I start from the minimal template, I want a ready-made set of requests
-  that creates a state agency, a district, and an elementary, middle, and high
-  school, so that I have somewhere to enroll students without hand-writing the
-  education organization payloads first.
+- When startup finishes, I want a state agency, a district, and an elementary,
+  middle, and high school to already exist, so that my client credentials can
+  be scoped to a real education organization and my first write has somewhere
+  to land.
+- When my own data needs organizations the kit did not create, I want a
+  ready-made set of requests I can copy and adjust, so that adding a second
+  district or another school does not mean writing payloads from the
+  specification.
 - When a feed run finishes, I want a report of error counts, landed record
   counts, and end-to-end duration, so that I can submit results without writing
   my own log analysis.
@@ -187,10 +191,10 @@ graph TD
   analytics integrations, which need data present before they can extract
   anything.
 
-> [!NOTE]
-> The minimal template contains no education organizations. Section 3.11
-> specifies a `.http` file that creates a small SEA / LEA / school hierarchy so
-> that write-oriented testing can begin on a minimal-template environment.
+- **Bootstrapping:** because an integration credential must be scoped to an
+  education organization, and the minimal template contains none, startup
+  creates a broad-access bootstrap credential and uses it to create a baseline
+  SEA / LEA / school hierarchy. See sections 3.5 and 3.12.
 
 ## 3. Functional Requirements
 
@@ -215,8 +219,8 @@ release; `SHOULD` is intended but negotiable; `MAY` is optional.
   reset that removes persisted volumes and returns the environment to its
   initial state.
 - **FR-LIFE-7:** Startup SHALL NOT report success until the API is ready to
-  accept authenticated requests; it SHALL wait on service health rather than on
-  container creation.
+  accept authenticated requests and bootstrapping per section 3.5 has
+  completed; it SHALL wait on service health rather than on container creation.
 - **FR-LIFE-8:** On success, startup SHALL print the local URLs, the active
   template selection, and the next action the participant should take.
 - **FR-LIFE-9:** On failure, startup SHALL return a non-zero exit status and
@@ -297,7 +301,61 @@ complete and identical across participants.
   pilot release SHALL be recorded as a known limitation in the kit's
   documentation rather than silently omitted.
 
-### 3.5 Credential Provisioning
+### 3.5 Environment Bootstrapping
+
+A participant's integration credential must be scoped to an education
+organization, which means at least one SEA has to exist before that credential
+can be created. A freshly initialized minimal-template environment contains
+none. Startup therefore has to break the cycle itself: create an administrative
+credential broad enough to write education organizations, then use it to create
+the baseline hierarchy. The `.http` file in section 3.12 remains the tool for
+adding *more* organizations afterwards; it is no longer the only way to get the
+first one.
+
+- **FR-BOOT-1:** Startup SHALL create a bootstrap client credential through
+  CMS, with access permissions broad enough to create education organizations,
+  without participant intervention.
+- **FR-BOOT-2:** Startup SHALL use the bootstrap credential to create the
+  baseline education organization hierarchy defined in section 3.12.
+- **FR-BOOT-3:** Bootstrapping SHALL complete before startup reports success,
+  so that the environment a participant first touches already contains an SEA
+  to scope an integration credential against.
+- **FR-BOOT-4:** Bootstrapping SHALL be idempotent: re-running startup SHALL
+  NOT create duplicate credentials or duplicate education organizations.
+- **FR-BOOT-5:** When the populated template is in use, credential
+  bootstrapping SHALL still run, and hierarchy creation SHALL be skipped
+  because the template already supplies one.
+- **FR-BOOT-6:** Bootstrapping SHALL report the bootstrap key and secret and
+  the identifiers of the organizations it created, and SHALL persist them to a
+  documented local location so that they survive the terminal session.
+- **FR-BOOT-7:** The bootstrap credential SHALL be labelled as an
+  administrative credential and SHALL NOT be presented as the credential to use
+  for integration testing; participants SHALL use a scoped credential from
+  section 3.6 for that.
+- **FR-BOOT-8:** Documentation SHALL state the bootstrap credential's
+  permissions and SHALL warn that its breadth is not representative of a
+  production client, so that authorization behavior is not measured through it.
+- **FR-BOOT-9:** Bootstrapping failure SHALL fail startup with an actionable
+  message identifying which step failed, rather than reporting success with an
+  incompletely prepared environment.
+- **FR-BOOT-10:** Bootstrapping SHALL be runnable as a standalone command as
+  well as part of startup, so that a participant can repair an environment
+  without a destructive reset.
+- **FR-BOOT-11:** Bootstrapping SHALL apply equivalently to the comparative
+  ODS/API stack when that profile is enabled, using ODS Admin API in place of
+  CMS.
+- **FR-BOOT-12:** Records created by bootstrapping SHALL be excluded from, or
+  distinguishable in, the metrics report, so that kit-created organizations are
+  never counted as participant-submitted data.
+- **FR-BOOT-13:** Documentation SHALL explain how to delete or disable the
+  bootstrap credential after setup, for participants who do not want a
+  broad-access credential to persist in their environment.
+- **FR-BOOT-14:** Bootstrapping SHOULD use a standard claim set where one
+  provides sufficient breadth, so that FR-FEAT-8 is not compromised. Where no
+  standard claim set suffices, the deviation SHALL be documented and SHALL
+  apply only to the bootstrap credential, never to participant credentials.
+
+### 3.6 Credential Provisioning
 
 - **FR-CRED-1:** The kit SHALL provide scripts that register a CMS client and
   generate client integration API credentials without the participant calling
@@ -323,11 +381,15 @@ complete and identical across participants.
   associate the credential with the education organizations present in that
   template, so that a participant's first authorized request succeeds without
   additional configuration.
-- **FR-CRED-9:** When the minimal template is in use, provisioning SHALL be
-  able to scope a credential to the sample hierarchy specified in section 3.11,
-  and SHALL be re-runnable after that hierarchy is created.
+- **FR-CRED-9:** When the minimal template is in use, provisioning SHALL scope
+  the generated credential to the bootstrapped hierarchy from section 3.5 by
+  default, so that a participant's first authorized request succeeds without
+  them having to create an education organization first.
+- **FR-CRED-10:** Provisioning SHALL NOT require the participant to supply
+  education organization identifiers, but SHALL allow overriding them for
+  participants who have added organizations of their own.
 
-### 3.6 Routing and Request Handling
+### 3.7 Routing and Request Handling
 
 - **FR-ROUTE-1:** NGINX SHALL be the single ingress for all participant-facing
   services and SHALL route by configurable path prefix.
@@ -353,7 +415,7 @@ complete and identical across participants.
 - **FR-ROUTE-9:** When a downstream service is unavailable, NGINX SHOULD return
   a clear HTTP 503 rather than an opaque proxy error.
 
-### 3.7 Comparative ODS/API Testing
+### 3.8 Comparative ODS/API Testing
 
 - **FR-COMP-1:** The kit SHALL provide an Ed-Fi ODS/API 7.3.2 environment in the
   same Compose project, selected by an opt-in `odsapi` Compose profile. This
@@ -374,7 +436,7 @@ complete and identical across participants.
 - **FR-COMP-7:** Documentation SHALL state that comparative testing is optional
   and SHALL describe its additional host resource cost.
 
-### 3.8 Logging
+### 3.9 Logging
 
 - **FR-LOG-1:** Logging SHALL be configured deliberately to capture what the
   program's evaluation criteria require: request outcomes, error detail, and
@@ -385,7 +447,7 @@ complete and identical across participants.
   host-mounted directory so that they survive container removal and can be read
   by the reporting scripts.
 - **FR-LOG-4:** Logs SHALL be in a machine-parseable format sufficient for
-  section 3.9 without heuristic text scraping.
+  section 3.10 without heuristic text scraping.
 - **FR-LOG-5:** Logs SHALL include a correlation identifier per request where
   the platform supports one, so that a failed record can be traced across
   services.
@@ -397,7 +459,7 @@ complete and identical across participants.
   same fidelity as write activity, so that downstream extraction runs can be
   measured.
 
-### 3.9 Metrics and Reporting
+### 3.10 Metrics and Reporting
 
 - **FR-MET-1:** The kit SHALL provide scripted log parsing that produces a run
   report without manual tabulation.
@@ -432,8 +494,11 @@ complete and identical across participants.
 - **FR-MET-13:** Reporting SHALL produce a usable report for any of the three
   integration shapes without the participant selecting a mode, deriving the
   activity profile from the logs themselves.
+- **FR-MET-14:** The report SHALL exclude activity generated by the kit itself
+  — bootstrapping, credential provisioning, and smoke tests — from
+  participant-attributed counts and durations, per FR-BOOT-12.
 
-### 3.10 Smoke Test and Request Examples
+### 3.11 Smoke Test and Request Examples
 
 - **FR-TEST-1:** The kit SHALL provide a `.http` request file that demonstrates
   the core interactions: token acquisition, a Discovery API call, a descriptor
@@ -455,26 +520,29 @@ complete and identical across participants.
 - **FR-TEST-7:** The request file SHALL include a write example that references
   an existing student and education organization, illustrating the assessment
   integration case. The education organization MAY come from the hierarchy in
-  section 3.11; the student requires the populated template.
+  section 3.12; the student requires the populated template.
 - **FR-TEST-8:** Examples that depend on pre-existing data SHALL state which
   template they require, and SHOULD fail with a recognizable message rather
   than an ambiguous empty result when run against the minimal template.
 
-### 3.11 Sample Education Organization Hierarchy
+### 3.12 Sample Education Organization Hierarchy
 
-The minimal template contains descriptors but no education organizations, so a
-write-oriented participant cannot post a school, a student enrollment, or an
-assessment result until at least one hierarchy exists. This capability closes
-that gap with a small, fixed hierarchy that a participant can create manually
-and inspect, rather than an opaque seeding step buried in startup.
+This section defines the baseline hierarchy that bootstrapping creates
+(FR-BOOT-2), and specifies a `.http` file covering the same requests. The file
+serves two purposes once bootstrapping exists: adding *more* education
+organizations when a participant's data needs them, and recreating the baseline
+by hand if bootstrapping was skipped or the organizations were removed. It also
+keeps the requests legible, so a participant can see exactly what the kit
+created on their behalf rather than inheriting an opaque seeded state.
 
-- **FR-EDORG-1:** The kit SHALL provide a `.http` request file that creates a
-  sample education organization hierarchy through the Ed-Fi API v8 Resources
-  API.
-- **FR-EDORG-2:** The hierarchy SHALL consist of exactly five education
-  organizations: one State Education Agency (SEA); one Local Education Agency
-  (LEA) referencing that SEA as its parent; and three schools referencing that
-  LEA — one elementary school, one middle school, and one high school.
+- **FR-EDORG-1:** The kit SHALL provide a `.http` request file that creates the
+  baseline education organization hierarchy through the Ed-Fi API v8 Resources
+  API, and SHALL support using it as a template for additional organizations.
+- **FR-EDORG-2:** The baseline hierarchy SHALL consist of exactly five
+  education organizations: one State Education Agency (SEA); one Local
+  Education Agency (LEA) referencing that SEA as its parent; and three schools
+  referencing that LEA — one elementary school, one middle school, and one high
+  school.
 - **FR-EDORG-3:** Requests SHALL be ordered so that every reference target
   exists before the record referencing it is created: the SEA first, then the
   LEA, then the three schools.
@@ -483,12 +551,12 @@ and inspect, rather than an opaque seeding step buried in startup.
   depends on grade level or school type.
 - **FR-EDORG-5:** The file SHALL use only descriptor values present in the
   minimal template, and SHALL succeed against a freshly initialized
-  minimal-template environment with no preparation beyond startup and
-  credential provisioning.
+  minimal-template environment with no preparation beyond startup.
 - **FR-EDORG-6:** The file SHALL be re-runnable without error and without
-  creating duplicate education organizations.
+  creating duplicate education organizations, including against an environment
+  where bootstrapping has already created the baseline.
 - **FR-EDORG-7:** The hierarchy SHALL use fixed, documented identifiers, and
-  documentation SHALL list them, so that the request examples in section 3.10,
+  documentation SHALL list them, so that the request examples in section 3.11,
   credential provisioning, and a participant's own client can all refer to the
   same organizations.
 - **FR-EDORG-8:** Those identifiers SHALL NOT collide with the education
@@ -501,24 +569,27 @@ and inspect, rather than an opaque seeding step buried in startup.
 - **FR-EDORG-10:** The file SHALL follow the same variable and token
   conventions as the other request files per FR-TEST-2, with no hard-coded
   secrets.
-- **FR-EDORG-11:** The credential used SHALL be authorized to create education
-  organizations, and documentation SHALL identify which claim set permits it.
-  Where authorization is scoped to specific education organization identifiers,
-  provisioning SHALL be able to scope a credential to this hierarchy.
-- **FR-EDORG-12:** Documentation SHALL state that this step is expected for
-  write-oriented testing on the minimal template and unnecessary on the
-  populated template.
-- **FR-EDORG-13:** Documentation SHALL name the most likely failure — a
-  credential not authorized to create education organizations — alongside the
-  response a participant will see when it happens.
-- **FR-EDORG-14:** The kit SHOULD provide a non-interactive scripted equivalent
-  in PowerShell and Bash, per FR-LIFE-2 and FR-LIFE-3, so that seeding can be
-  folded into an automated setup path.
+- **FR-EDORG-11:** The file SHALL be intended for use with the bootstrap
+  credential from section 3.5, and documentation SHALL say so, because a
+  participant's scoped integration credential will generally not be authorized
+  to create education organizations.
+- **FR-EDORG-12:** Documentation SHALL state that the baseline hierarchy
+  already exists after startup, and that this file is for adding organizations
+  beyond it or for repairing the baseline.
+- **FR-EDORG-13:** Documentation SHALL name the most likely failure — using a
+  scoped integration credential instead of the bootstrap credential — alongside
+  the response a participant will see when it happens.
+- **FR-EDORG-14:** The baseline definition in this section SHALL be the single
+  source of truth for both bootstrapping and this file; the two SHALL NOT
+  diverge in identifiers, grade levels, or school categories.
 - **FR-EDORG-15:** The file SHOULD include an equivalent sequence for the
   comparative ODS/API route when that profile is enabled, so that both
-  platforms can be brought to the same starting hierarchy.
+  platforms can be brought to the same hierarchy by hand.
+- **FR-EDORG-16:** The file SHOULD show which fields a participant would change
+  to add an organization of their own — a second LEA or an additional school —
+  rather than only the fixed baseline values.
 
-### 3.12 Documentation
+### 3.13 Documentation
 
 - **FR-DOC-1:** The kit SHALL document prerequisites — Docker, host resources,
   available ports, and certificate generation — before any setup step.
@@ -530,8 +601,8 @@ and inspect, rather than an opaque seeding step buried in startup.
 - **FR-DOC-4:** Documentation SHALL list default local URLs and default
   credentials, and SHALL state that they are local-development values only.
 - **FR-DOC-5:** Documentation SHALL include a troubleshooting section covering
-  port conflicts, certificate trust, startup timeouts, volume reset, and
-  switching templates.
+  port conflicts, certificate trust, startup timeouts, volume reset, switching
+  templates, and bootstrapping failures.
 - **FR-DOC-6:** Documentation SHALL state what feedback the pilot wants and how
   to provide it.
 - **FR-DOC-7:** Documentation SHALL be verified by following it on a clean host
@@ -594,6 +665,10 @@ and inspect, rather than an opaque seeding step buried in startup.
 - **NFR-SEC-7:** The repository SHALL retain its existing supply-chain
   workflows, and images SHALL be pulled from official Ed-Fi Alliance published
   locations.
+- **NFR-SEC-8:** The bootstrap credential created at startup SHALL be generated
+  locally per environment rather than shipped as a fixed value in the
+  repository, SHALL be documented as administrative and broad-access, and SHALL
+  be removable per FR-BOOT-13.
 
 ### 4.4 Privacy and Data Handling
 
@@ -677,12 +752,13 @@ and inspect, rather than an opaque seeding step buried in startup.
 | Ed-Fi ODS Admin API | Vendor, application, and credential management for the v7 stack | Container | CMS database schema and configuration |
 | PostgreSQL (ODS/API) | Persistence for the comparative stack | Container, `odsapi` profile | Minimal or populated template initialization, separate volume |
 | PGAdmin | Database inspection for troubleshooting | Container | Preconfigured server definitions, named volume |
-| Credential provisioning scripts | Register clients and mint client integration API credentials for both platforms | Host machine | CMS API and ODS Admin API configuration surface |
+| Bootstrapping | Create the broad-access bootstrap credential and the baseline education organization hierarchy during startup | Host machine, invoked by lifecycle scripts | Bootstrap credential output location, baseline hierarchy definition |
+| Credential provisioning scripts | Register clients and mint scoped client integration API credentials for both platforms | Host machine | CMS API and ODS Admin API configuration surface |
 | Template provisioning | Initialize the selected minimal or populated starting data set on first run | Container entrypoint or init script | Template source artifacts, template selection setting |
 | Log mount | Durable location for API and proxy logs | Host filesystem | Configurable host path |
 | Reporting scripts | Parse logs into error counts, landed counts, duration, and environment metadata | Host machine | Log mount, report output path |
 | Request examples and smoke test | Demonstrate and verify core interactions | Host machine / HTTP client | `.http` file variables |
-| Education organization seeding requests | Create the sample SEA / LEA / school hierarchy on a minimal-template environment | Host machine / HTTP client | Fixed hierarchy identifiers, token variables |
+| Education organization requests | Add organizations beyond the bootstrapped baseline, or recreate it by hand | Host machine / HTTP client | Baseline hierarchy identifiers, token variables |
 
 ## 6. Out of Scope and Known Limitations
 
@@ -700,12 +776,12 @@ and inspect, rather than an opaque seeding step buried in startup.
   templates. Participant-supplied or custom-built templates are not supported.
 - Synthetic data generation tooling. The kit ships the populated template as-is
   and does not generate data at a participant-chosen scale. The fixed
-  five-organization hierarchy in section 3.11 is the only exception.
+  five-organization hierarchy in section 3.12 is the only exception.
 - Configurable, larger, or multi-district education organization hierarchies.
   The sample hierarchy is one SEA, one LEA, and three schools, and is not
   parameterized.
 - Seeding of students, staff, enrollments, sections, or calendars on the
-  minimal template. Section 3.11 covers education organizations only;
+  minimal template. Section 3.12 covers education organizations only;
   everything below that level is the participant's data to submit, or comes
   from the populated template.
 - Data Standard versions other than 5.2, and Ed-Fi extensions or TPDM.
@@ -762,6 +838,17 @@ and inspect, rather than an opaque seeding step buried in startup.
 - **Default credentials and a self-signed certificate in a public repository**
   are appropriate only for a local environment; a participant who exposes the
   stack on a network inherits that risk (NFR-SEC-4, NFR-SEC-5).
+- **The bootstrap credential is a standing broad-access credential in every
+  participant's environment.** It is necessary — a scoped credential cannot
+  create the SEA it would be scoped to — but it is not representative of a
+  production client, so authorization behavior observed through it means
+  nothing. FR-BOOT-7, FR-BOOT-8, FR-BOOT-13, and NFR-SEC-8 contain the risk;
+  they do not remove it.
+- **Bootstrapping puts kit-created records in the same database as participant
+  data.** FR-BOOT-12 and FR-MET-14 require them to be excluded from reported
+  counts, but any error in that separation inflates or deflates a
+  participant's numbers, and the five baseline organizations will appear in
+  read-oriented extracts either way.
 - **Broadening scope to three integration shapes widens the acceptance
   surface.** NFR-USE-1 now has to hold for six combinations of shape and
   template, and FR-DOC-7 requires verifying both template paths on a clean
@@ -781,13 +868,17 @@ and inspect, rather than an opaque seeding step buried in startup.
 - Are participating client integrators prepared for the Ed-Fi API v8 resource
   paths, or is `/data/v3` compatibility load-bearing for most of them? This is
   a question the pilot should answer, not one the kit should assume.
-- Which claim set and which education organization identifiers should a
-  generated credential receive by default? Section 3.11 settles *what* the
-  minimal-template hierarchy contains, but not the ordering problem it creates:
-  a credential must already be authorized to create an SEA before the hierarchy
-  exists, and then may need re-scoping to the organizations it just created
-  (FR-CRED-9, FR-EDORG-11). Is there a standard claim set that permits both, or
-  does provisioning need to run twice?
+- Is there a *standard* claim set broad enough for the bootstrap credential to
+  create an SEA, or does bootstrapping require a claim set outside the standard
+  set? FR-FEAT-8 requires standard claim sets unmodified so that participants
+  observe documented authorization behavior, and FR-BOOT-14 confines any
+  deviation to the bootstrap credential — but if no standard claim set can
+  create an SEA, the kit ships something non-standard on day one and that needs
+  to be a conscious decision.
+- Can a credential in Ed-Fi API v8 be scoped to an SEA and thereby reach the
+  LEA and schools beneath it, or must provisioning enumerate each education
+  organization explicitly? This determines whether FR-CRED-9 is one setting or
+  five.
 - Should the sample hierarchy's identifiers be arbitrary values chosen to avoid
   collision (FR-EDORG-8), or recognizable values aligned to Ed-Fi
   documentation conventions? Collision-avoidance and familiarity pull in
@@ -863,8 +954,14 @@ and inspect, rather than an opaque seeding step buried in startup.
 - **LEA (Local Education Agency):** A school district, referencing an SEA as
   its parent in the sample hierarchy.
 - **Education organization hierarchy:** The parent-child chain from SEA to LEA
-  to school. Section 3.11 specifies a five-organization instance of it for
-  minimal-template environments.
+  to school. Section 3.12 specifies the five-organization baseline that
+  bootstrapping creates.
+- **Bootstrap credential:** The broad-access administrative credential that
+  startup creates so that the baseline education organization hierarchy can be
+  written before any scoped credential exists. Not the credential a participant
+  uses for integration testing.
+- **Baseline hierarchy:** The one SEA, one LEA, and three schools that
+  bootstrapping creates on a minimal-template environment.
 - **Discovery API:** The root endpoint that advertises a platform instance's
   version, data models, and dependent endpoint URLs.
 - **Change queries:** The Ed-Fi capability allowing a client to retrieve
