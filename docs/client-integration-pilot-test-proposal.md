@@ -82,6 +82,11 @@ against a current Ed-Fi ODS/API implementation provided in the same package.
 Comparative results would help assess behavioral consistency, performance
 characteristics, and readiness for migration to the new platform.
 
+Test results will only be compared in the context of a single vendor, with the
+goal of understanding the differences between Ed-Fi API v8 and Ed-Fi ODS/API.
+Test results will never be compared *between vendors*: there are too many
+variables for such a comparison to have value.
+
 ## Desired Outcomes
 
 The pilot is intended to:
@@ -101,3 +106,9 @@ Participating organizations are asked to contribute feedback on installation
 experience, configuration requirements, data processing outcomes, and overall
 usability. This feedback will be used to improve documentation, deployment
 automation, and product quality prior to general availability.
+
+Feedback will be delivered directly to Ed-Fi Alliance staff. Aggregate results
+will be shared with the Ed-Fi Community; participants will remain anonymous
+unless they opt-in to be named. Detailed results will be treated confidentially:
+the Alliance will *not* publish detailed results unless explicitly permitted by
+the participant.
