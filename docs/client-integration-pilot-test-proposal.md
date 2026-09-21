@@ -112,3 +112,6 @@ will be shared with the Ed-Fi Community; participants will remain anonymous
 unless they opt-in to be named. Detailed results will be treated confidentially:
 the Alliance will *not* publish detailed results unless explicitly permitted by
 the participant.
+
+> [!TIP]
+> This testing project will have no bearing on a provider's Ed-Fi Certification.
