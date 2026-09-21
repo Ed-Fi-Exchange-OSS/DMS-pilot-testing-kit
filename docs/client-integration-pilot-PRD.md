@@ -294,7 +294,8 @@ complete and identical across participants.
 - **FR-FEAT-5:** The stack SHALL enable Profiles.
 - **FR-FEAT-6:** The stack SHALL enable ETag support.
 - **FR-FEAT-7:** The stack SHALL enable limit/offset paging.
-- **FR-FEAT-8:** The stack SHALL leave the standard claim sets unmodified, so
+- **FR-FEAT-8:** The stack SHALL enable cursor-based paging.
+- **FR-FEAT-9:** The stack SHALL leave the standard claim sets unmodified, so
   that authorization behavior observed by a participant matches the documented
   default. The kit MAY add claim sets that the platform does not supply, as
   specified in section 3.6, but SHALL NOT alter the ones it does.
