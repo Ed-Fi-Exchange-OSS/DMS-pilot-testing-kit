@@ -1,0 +1,6 @@
+# https://git-scm.com/docs/gitattributes
+# Normalize all text files to LF in the repository and on checkout, on every
+# platform. Shell scripts and container entrypoints require LF, and mixed
+# endings produce whole-file diffs when contributors work across Windows,
+# macOS, and Linux.
+* text=auto eol=lf
