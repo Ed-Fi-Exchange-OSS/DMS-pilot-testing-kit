@@ -163,6 +163,7 @@ graph TD
   nginx --> pgadmin["PGAdmin"]
   nginx --> ods["ODS/API 7.3.2 (optional Compose profile)"]
   nginx --> adminapi["ODS Admin API 2.3.2 (optional Compose profile)"]
+  nginx --> swaggerUI["Ed-Fi Swagger UI"]
   dms --> dmsdb[("PostgreSQL - DMS and CMS databases")]
   cms --> dmsdb
   ods --> odsdb[("PostgreSQL - ODS/API databases")]
@@ -174,8 +175,10 @@ graph TD
 
 ### Topology summary
 
-- **Default stack:** NGINX, Ed-Fi API v8 (DMS), Ed-Fi CMS, PostgreSQL, PGAdmin
-  (version: a recent snapshot from the `main` branch, post 8.0 release).
+- **Default stack:** NGINX, Ed-Fi API v8 (DMS), Ed-Fi CMS, Ed-Fi Swagger UI,
+  PostgreSQL.
+  - DMS/CMS version: a recent snapshot from the `main` branch, post 8.0 release,
+    published as a pinnable pre-release.
 - **Optional `odsapi` Compose profile:** Ed-Fi ODS/API 7.3.2 and ODS Admin API
   2.3.2  with their own PostgreSQL service, behind the same NGINX instance on
   distinct routes.
@@ -287,7 +290,7 @@ complete and identical across participants.
 
 - **FR-FEAT-1:** The stack SHALL expose all endpoints defined by the Resources
   API and the Descriptors API for Data Standard 5.2.
-- **FR-FEAT-2:** THe stack SHALL expose the Discovery API (root URL).
+- **FR-FEAT-2:** The stack SHALL expose the Discovery API (root URL).
 - **FR-FEAT-3:** The stack SHALL expose platform metadata: XSD, OpenAPI
   specification documents, and a browsable Swagger UI.
 - **FR-FEAT-4:** The stack SHALL enable change queries.
@@ -316,7 +319,7 @@ first one.
 
 - **FR-BOOT-1:** Startup SHALL create a bootstrap client credential through
   CMS, using the "Ed-Fi Sandbox" claim set per FR-CLAIM-1, without participant
-  intervention.
+  intervention (`EdFiSandbox` in v8, `Ed-Fi Sandbox` in v7).
 - **FR-BOOT-2:** Startup SHALL use the bootstrap credential to create the
   baseline education organization hierarchy defined in section 3.13.
 - **FR-BOOT-3:** Bootstrapping SHALL complete before startup reports success,
@@ -372,9 +375,9 @@ has no standard claim set at all.
   integration shape, so that observed authorization behavior is representative
   of a production client.
 - **FR-CLAIM-3:** SIS integrations SHALL use the standard "SIS Vendor" claim
-  set.
+  set (`SISVendor` in v8, `SIS Vendor` in v7).
 - **FR-CLAIM-4:** Assessment integrations SHALL use the standard "Assessment
-  Vendor" claim set.
+  Vendor" claim set (`AssessmentVendor` in v8, `Assessment Vendor` in v7).
 - **FR-CLAIM-5:** Because no standard claim set grants broad read access, the
   kit SHALL provision a "Data Warehouse" claim set granting read access to all
   resources, for downstream data warehouse and analytics integrations.
@@ -801,7 +804,8 @@ created on their behalf rather than inheriting an opaque seeded state.
 | Ed-Fi CMS | Vendor, application, and credential management for the v8 stack | Container | CMS database schema and configuration |
 | PostgreSQL (v8) | Persistence for DMS and CMS | Container | Credentials, named volume, minimal or populated template initialization |
 | ODS/API 7.3.2 | Optional comparative system under test, with built-in OAuth2 | Container, `odsapi` profile | Image tag, route, credentials |
-| Ed-Fi ODS Admin API | Vendor, application, and credential management for the v7 stack | Container | CMS database schema and configuration |
+| Ed-Fi ODS Admin API | Vendor, application, and credential management for the v7 stack | Container | EdFi_Admin and EdFi_Security databases |
+| Ed-Fi Swagger UI | Web app for API documentation and testing | Container, both profiles | none |
 | PostgreSQL (ODS/API) | Persistence for the comparative stack | Container, `odsapi` profile | Minimal or populated template initialization, separate volume |
 | PGAdmin | Database inspection for troubleshooting | Container | Preconfigured server definitions, named volume |
 | Bootstrapping | Create the Ed-Fi Sandbox bootstrap credential, provision the Data Warehouse claim set, and create the baseline education organization hierarchy during startup | Host machine, invoked by lifecycle scripts | Bootstrap credential output location, baseline hierarchy definition, Data Warehouse claim set definition |
@@ -920,16 +924,6 @@ created on their behalf rather than inheriting an opaque seeded state.
 
 ### Open questions
 
-- How is a populated starting point produced for Ed-Fi API v8 — is there a
-  publishable database template, or must the sample data be loaded through the
-  API or a bulk loader on first startup? This drives FR-TMPL-1, FR-TMPL-7,
-  NFR-PORT-5, and the populated path's contribution to NFR-USE-1.
-- Do the v8 and ODS/API populated data sets match closely enough that a
-  read-side comparative extract is meaningful, or does FR-TMPL-3 need to be
-  weakened to "equivalent where available"?
-- Are participating client integrators prepared for the Ed-Fi API v8 resource
-  paths, or is `/data/v3` compatibility load-bearing for most of them? This is
-  a question the pilot should answer, not one the kit should assume.
 - What exactly does "read all" mean for the Data Warehouse claim set
   (FR-CLAIM-5)? Does it cover descriptors, change queries, and the Discovery
   and metadata endpoints as well as resources, and does it need any Profiles
@@ -946,9 +940,6 @@ created on their behalf rather than inheriting an opaque seeded state.
   itself? The kit having to supply one is evidence of a gap, and the pilot is
   positioned to confirm whether downstream integrators actually need it
   (FR-CLAIM-12).
-- Does ODS/API 7.3.2 with Admin API 2.3.2 support provisioning an equivalent
-  custom claim set, and is the definition format close enough to share one
-  source of truth with the v8 stack (FR-CLAIM-13)?
 - Does a read-all claim set in Ed-Fi API v8 still require education
   organization scoping, or does read-all mean read-all irrespective of the
   credential's education organization association? This affects whether
@@ -957,21 +948,9 @@ created on their behalf rather than inheriting an opaque seeded state.
   or are assessment and warehouse integrations a later wave? The answer affects
   how much of section 3.3 and FR-TEST-6 through FR-TEST-8 must land in the
   first release.
-- Should the populated template be offered for the ODS/API comparative stack
-  only, if producing an equivalent v8 populated state proves impractical for
-  the first release?
 - What is the report's machine-readable format and schema, and does the
   Alliance need it stable enough to aggregate automatically across participants
   and across integration shapes?
-- What is the submission channel for reports and feedback — GitHub issues in
-  this repository, a form, or direct contact with the pilot coordinator?
-- What are the minimum host resources for each profile, and should the kit
-  refuse to start or warn when the host is below them?
-- How are corrections distributed mid-pilot if a defect is found in the kit
-  itself, and how is a participant's report tied to the kit version that
-  produced it?
-- Does the pilot need the participant to record a host hardware profile
-  alongside the report for comparative timings to mean anything?
 
 ## 8. Glossary
 

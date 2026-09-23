@@ -56,7 +56,22 @@ The pilot will ask participants to:
 - Exercise the Ed-Fi API v8 platform with their own client: submitting
   representative data, extracting data, or both, as fits their integration.
 - Report any installation, configuration, interoperability, or data-processing
-  issues encountered during testing.
+  issues encountered during testing. Send output reports directly to Ed-Fi
+  Alliance staff; log test kit problems as an Issue in the GitHub repository or
+  report directly to staff.
+
+> [!WARNING]
+> Unfortunately, extensions *must* be out of scope for the first round
+> of testing: the Alliance does not always have access to the extensions,
+> and where we do have access, we do not have time to pre-configure them
+> in easy-to-start sandboxes.
+>
+> Extensions that add *fields* to an existing payload will not encounter
+> a problem, because the Ed-Fi API is lenient: it ignores additional fields.
+> Extensions that add new endpoints will result in extra 404 errors
+> occurring. In some cases, those errors might entirely defeat the purpose
+> of the testing; in other cases they may just be an annoyance that needs
+> to be ignored in the log analysis.
 
 ## Evaluation Criteria
 
@@ -107,11 +122,11 @@ experience, configuration requirements, data processing outcomes, and overall
 usability. This feedback will be used to improve documentation, deployment
 automation, and product quality prior to general availability.
 
-Feedback will be delivered directly to Ed-Fi Alliance staff. Aggregate results
-will be shared with the Ed-Fi Community; participants will remain anonymous
-unless they opt-in to be named. Detailed results will be treated confidentially:
-the Alliance will *not* publish detailed results unless explicitly permitted by
-the participant.
+Log analysis and feedback will be delivered directly to Ed-Fi Alliance staff.
+Aggregate results will be shared with the Ed-Fi Community; participants will
+remain anonymous unless they opt-in to be named. Detailed results will be
+treated confidentially: the Alliance will *not* publish detailed results unless
+explicitly permitted by the participant.
 
 > [!TIP]
 > This testing project will have no bearing on a provider's Ed-Fi Certification.
