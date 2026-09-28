@@ -6,6 +6,18 @@ the repository root; new work lives in `ed-fi-api-v8/`.
 Common verification command (defined in Task 12, used informally before then):
 `docker compose -f ed-fi-api-v8/compose.yml --env-file ed-fi-api-v8/.env up -d --wait`
 
+## Status (2026-09-28)
+
+Docker isn't available in the sandbox yet, so the following files were drafted and checked without a
+Docker daemon. They are uncommitted and still need a real `docker compose up` run.
+
+- Task 1 (partial): SchemaTools and BulkLoadClient findings are in `ed-fi-api-v8/tools/README.md`
+- Task 4 (partial): `ed-fi-api-v8/tools/Dockerfile`
+- Tasks 5, 6, 15 (NGINX parts): `ed-fi-api-v8/nginx/`, `ed-fi-api-v8/ssl/`
+- Task 7: `ed-fi-api-v8/swagger-ui/`, `ed-fi-api-v8/pgadmin/`
+
+Each README lists the entries still to add to `compose.yml`, `.env.example`, and `.gitignore`.
+
 ---
 
 ## Phase 0: De-risk

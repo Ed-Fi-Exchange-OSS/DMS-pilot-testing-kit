@@ -1,0 +1,24 @@
+# SPDX-License-Identifier: Apache-2.0
+# Licensed to the Ed-Fi Alliance under one or more agreements.
+# The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
+# See the LICENSE and NOTICES files in the project root for more information.
+
+# Shared proxy settings, included inside each location that sets $kit_upstream.
+# Rendered to /etc/nginx/conf.d/snippets/kit-proxy.conf; nginx.conf only includes
+# conf.d/*.conf, so this subdirectory is never loaded at http level by itself.
+#
+# X-Forwarded-Prefix is deliberately not sent here: DMS, CMS, and PGAdmin receive the
+# full path and know their own PathBase, so a prefix header could double it. Locations
+# that strip a prefix (Swagger UI) add X-Forwarded-Prefix themselves.
+
+proxy_pass http://$kit_upstream;
+proxy_http_version 1.1;
+# No proxy_redirect here: "off" would silently cancel a location-level proxy_redirect.
+
+proxy_set_header Host $host;
+proxy_set_header X-Real-IP $remote_addr;
+proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+proxy_set_header X-Forwarded-Proto $scheme;
+proxy_set_header X-Forwarded-Host $host$kit_external_port_suffix;
+proxy_set_header X-Forwarded-Port ${HTTPS_PORT};
+proxy_set_header correlationid $kit_correlation_id;
