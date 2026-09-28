@@ -1,0 +1,259 @@
+# SPDX-License-Identifier: Apache-2.0
+# Licensed to the Ed-Fi Alliance under one or more agreements.
+# The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
+# See the LICENSE and NOTICES files in the project root for more information.
+
+# Rendered by the official nginx image (20-envsubst-on-templates.sh) into
+# /etc/nginx/conf.d/default.conf, which nginx.conf includes inside its http {} block.
+# Required environment: HTTPS_PORT, DMS_PATH_BASE, CMS_PATH_BASE. Everything the kit
+# toggles at start-up (body size, timeouts, /data/v3, rate limiting) is written by
+# /docker-entrypoint.d/40-kit-features.sh into /etc/nginx/conf.d/kit/, not here.
+
+# ---------------------------------------------------------------------------------
+# http level
+# ---------------------------------------------------------------------------------
+
+server_tokens off;
+
+# Pass the client's correlation ID through, or generate one so every request has one.
+map $http_correlationid $kit_correlation_id {
+    ""      $request_id;
+    default $http_correlationid;
+}
+
+# Only echo simple correlation IDs into the kit's own JSON error bodies.
+map $kit_correlation_id $kit_correlation_id_safe {
+    "~^[A-Za-z0-9._:-]+$" $kit_correlation_id;
+    default               "";
+}
+
+# Omit the port from redirects and X-Forwarded-Host when it is the HTTPS default.
+map "${HTTPS_PORT}" $kit_external_port_suffix {
+    "443"   "";
+    default ":${HTTPS_PORT}";
+}
+
+# WebSocket upgrade support (PGAdmin).
+map $http_upgrade $kit_connection_upgrade {
+    ""      close;
+    default upgrade;
+}
+
+# Guarantees a JSON boolean in the access log.
+map $kit_data_v3_rewrite $kit_log_data_v3_rewrite {
+    "true"  true;
+    default false;
+}
+
+# One JSON object per line. Strings are quoted; numeric nginx variables are not.
+# upstream_* values are strings because nginx joins retries as "a, b".
+log_format kit_json escape=json
+    '{'
+    '"time":"$time_iso8601",'
+    '"request_id":"$request_id",'
+    '"correlation_id":"$kit_correlation_id",'
+    '"remote_addr":"$remote_addr",'
+    '"x_forwarded_for":"$http_x_forwarded_for",'
+    '"host":"$host",'
+    '"method":"$request_method",'
+    '"request_uri":"$request_uri",'
+    '"uri":"$uri",'
+    '"args":"$args",'
+    '"protocol":"$server_protocol",'
+    '"status":$status,'
+    '"request_length":$request_length,'
+    '"body_bytes_sent":$body_bytes_sent,'
+    '"request_time":$request_time,'
+    '"service":"$kit_service",'
+    '"upstream_addr":"$upstream_addr",'
+    '"upstream_status":"$upstream_status",'
+    '"upstream_response_time":"$upstream_response_time",'
+    '"total_count":"$upstream_http_total_count",'
+    '"data_v3_rewrite":$kit_log_data_v3_rewrite,'
+    '"user_agent":"$http_user_agent"'
+    '}';
+
+# The host log directory is bind-mounted at /var/log/nginx/kit. The image's default
+# access_log (stdout, "main" format) from nginx.conf stays active as well.
+access_log /var/log/nginx/kit/access.json kit_json;
+error_log  /var/log/nginx/kit/error.log warn;
+error_log  stderr warn;
+
+# ---------------------------------------------------------------------------------
+# HTTP: redirect everything to HTTPS on the external port
+# ---------------------------------------------------------------------------------
+
+server {
+    listen 80 default_server;
+    server_name _;
+
+    set $kit_service nginx;
+    set $kit_data_v3_rewrite false;
+
+    return 301 https://$host$kit_external_port_suffix$request_uri;
+}
+
+# ---------------------------------------------------------------------------------
+# HTTPS ingress
+# ---------------------------------------------------------------------------------
+
+server {
+    listen 443 ssl default_server;
+    http2 on;
+    server_name _;
+
+    # Self-signed certificate from ssl/generate-certificate.{sh,ps1}
+    ssl_certificate     /ssl/server.crt;
+    ssl_certificate_key /ssl/server.key;
+    ssl_protocols       TLSv1.2 TLSv1.3;
+    ssl_prefer_server_ciphers off;
+    ssl_session_cache   shared:kit_ssl:10m;
+    ssl_session_timeout 1d;
+    ssl_session_tickets off;
+
+    # Keep typical API request bodies in memory (avoids a warning per large POST).
+    client_body_buffer_size 1m;
+
+    # Relative redirects keep the participant's external host and port.
+    absolute_redirect off;
+
+    # Docker's embedded DNS. Upstreams are variables, so names are resolved per
+    # request and nginx starts even when a backend is down.
+    resolver 127.0.0.11 valid=10s ipv6=off;
+    resolver_timeout 5s;
+
+    # Defaults for logging; each location overrides $kit_service.
+    set $kit_service nginx;
+    set $kit_data_v3_rewrite false;
+
+    # Only errors nginx itself generates reach these handlers. proxy_intercept_errors
+    # is left off, so every status and body returned by DMS, CMS, Swagger UI, or
+    # PGAdmin (including DMS's own 503s and problem details) passes through untouched.
+    # 502 = connection refused or name not resolved (container stopped or starting).
+    # 504 = the upstream accepted the connection but did not answer in time.
+    # 429 = the kit's optional rate limit (see RATE_LIMIT_ENABLED).
+    error_page 502 = @kit_unavailable;
+    error_page 504 = @kit_timeout;
+    error_page 429 = @kit_rate_limited;
+
+    # Feature toggles written at start-up by 40-kit-features.sh:
+    # body size and timeouts, /data/v3 rewrite, rate limiting.
+    include /etc/nginx/conf.d/kit/*.conf;
+
+    # Ed-Fi API (DMS). DMS runs with PathBase=${DMS_PATH_BASE}; the prefix is not stripped.
+    location = /${DMS_PATH_BASE} {
+        set $kit_service dms;
+        set $kit_upstream dms:8080;
+        include /etc/nginx/conf.d/snippets/kit-proxy.conf;
+    }
+
+    location /${DMS_PATH_BASE}/ {
+        set $kit_service dms;
+        set $kit_upstream dms:8080;
+        include /etc/nginx/conf.d/snippets/kit-proxy.conf;
+    }
+
+    # Configuration Service (CMS). CMS runs with PathBase=${CMS_PATH_BASE}; not stripped.
+    location = /${CMS_PATH_BASE} {
+        set $kit_service config;
+        set $kit_upstream config:8081;
+        include /etc/nginx/conf.d/snippets/kit-proxy.conf;
+    }
+
+    location /${CMS_PATH_BASE}/ {
+        set $kit_service config;
+        set $kit_upstream config:8081;
+        include /etc/nginx/conf.d/snippets/kit-proxy.conf;
+    }
+
+    # Swagger UI serves from its root, so the /swagger prefix is stripped.
+    location = /swagger {
+        return 301 /swagger/;
+    }
+
+    location /swagger/ {
+        set $kit_service swagger-ui;
+        set $kit_upstream swagger-ui:80;
+        rewrite ^/swagger/(.*)$ /$1 break;
+        include /etc/nginx/conf.d/snippets/kit-proxy.conf;
+        proxy_set_header X-Forwarded-Prefix /swagger;
+        proxy_redirect / /swagger/;
+    }
+
+    # PGAdmin runs with SCRIPT_NAME=/pgadmin; the prefix is not stripped.
+    location = /pgadmin {
+        return 301 /pgadmin/;
+    }
+
+    location /pgadmin/ {
+        set $kit_service pgadmin;
+        set $kit_upstream pgadmin:80;
+        include /etc/nginx/conf.d/snippets/kit-proxy.conf;
+        proxy_set_header X-Script-Name /pgadmin;
+        proxy_set_header Upgrade $http_upgrade;
+        proxy_set_header Connection $kit_connection_upgrade;
+    }
+
+    # Container health check target; does not depend on any backend.
+    location = /nginx-health {
+        access_log off;
+        default_type application/json;
+        return 200 '{"status":"ok"}';
+    }
+
+    # Anything else: a JSON 404 that lists the kit's routes.
+    location / {
+        default_type application/problem+json;
+        return 404 '{
+  "type": "urn:ed-fi:kit:route-not-found",
+  "title": "Not Found",
+  "status": 404,
+  "detail": "No kit route matches this path.",
+  "routes": ["/${DMS_PATH_BASE}/", "/${CMS_PATH_BASE}/", "/swagger/", "/pgadmin/", "/data/v3/"]
+}
+';
+    }
+
+    # JSON bodies below span lines on purpose: the newlines sit between JSON members.
+    location @kit_unavailable {
+        default_type application/problem+json;
+        add_header Retry-After 10 always;
+        return 503 '{
+  "type": "urn:ed-fi:kit:service-unavailable",
+  "title": "Service Unavailable",
+  "status": 503,
+  "detail": "The $kit_service service is not reachable. It may still be starting, or it may have stopped.",
+  "hint": "docker compose ps $kit_service; docker compose logs $kit_service",
+  "service": "$kit_service",
+  "correlationId": "$kit_correlation_id_safe"
+}
+';
+    }
+
+    location @kit_timeout {
+        default_type application/problem+json;
+        return 504 '{
+  "type": "urn:ed-fi:kit:upstream-timeout",
+  "title": "Gateway Timeout",
+  "status": 504,
+  "detail": "The $kit_service service did not respond within PROXY_READ_TIMEOUT.",
+  "hint": "docker compose logs $kit_service; raise PROXY_READ_TIMEOUT for long requests",
+  "service": "$kit_service",
+  "correlationId": "$kit_correlation_id_safe"
+}
+';
+    }
+
+    location @kit_rate_limited {
+        default_type application/problem+json;
+        add_header Retry-After 1 always;
+        return 429 '{
+  "type": "urn:ed-fi:kit:rate-limited",
+  "title": "Too Many Requests",
+  "status": 429,
+  "detail": "The kit rate limit was exceeded (RATE_LIMIT_ENABLED=true). Slow down and retry.",
+  "correlationId": "$kit_correlation_id_safe"
+}
+';
+    }
+}
