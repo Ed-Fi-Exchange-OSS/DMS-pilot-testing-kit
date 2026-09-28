@@ -1,0 +1,151 @@
+# SPDX-License-Identifier: Apache-2.0
+# Licensed to the Ed-Fi Alliance under one or more agreements.
+# The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
+# See the LICENSE and NOTICES files in the project root for more information.
+
+# Core platform: PostgreSQL, CMS, and DMS. None of these publish a host port except PostgreSQL
+# (loopback only, for host database tools); participants reach CMS and DMS through NGINX.
+
+x-logging: &logging
+  driver: json-file
+  options:
+    max-size: "${DOCKER_LOG_MAX_SIZE:-50m}"
+    max-file: "${DOCKER_LOG_MAX_FILE:-5}"
+
+services:
+  db:
+    image: ${POSTGRES_IMAGE:?POSTGRES_IMAGE must be set in .env}
+    # Schema provisioning runs as one large transaction and exhausts the default lock budget.
+    command: ["postgres", "-c", "max_locks_per_transaction=256", "-c", "max_connections=${POSTGRES_MAX_CONNECTIONS:-200}"]
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD must be set in .env}
+      # DMS and CMS share one database (the upstream default "shared" topology).
+      POSTGRES_DB: ${POSTGRES_DB_NAME:-edfi_datamanagementservice}
+    volumes:
+      - db-data:/var/lib/postgresql/data
+    ports:
+      - "127.0.0.1:${POSTGRES_PORT:-5435}:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d ${POSTGRES_DB_NAME:-edfi_datamanagementservice}"]
+      interval: 5s
+      timeout: 5s
+      retries: 12
+      start_period: 30s
+    restart: unless-stopped
+    logging: *logging
+
+  config:
+    # At startup CMS logs ASP.NET Core Data Protection warnings (ephemeral key directory, no XML
+    # encryptor). They are expected: the kit's secrets are protected by CMS_DATABASE_ENCRYPTION_KEY and
+    # CMS_IDENTITY_ENCRYPTION_KEY, not by Data Protection.
+    image: ${CMS_IMAGE:?CMS_IMAGE must be set in .env}
+    hostname: config
+    environment:
+      ASPNETCORE_HTTP_PORTS: "8081"
+      AppSettings__PathBase: ${CMS_PATH_BASE:-config}
+      AppSettings__Datastore: postgresql
+      AppSettings__DeployDatabaseOnStartup: "true"
+      AppSettings__IdentityProvider: self-contained
+      AppSettings__MultiTenancy: "false"
+      AppSettings__EnableApplicationResetEndpoint: "false"
+      AppSettings__ReverseProxy__UseForwardedHeaders: "true"
+      # Only NGINX can reach this service, over the private Compose network.
+      AppSettings__ReverseProxy__KnownNetworks: ${TRUSTED_PROXY_NETWORKS:-10.0.0.0/8,172.16.0.0/12,192.168.0.0/16}
+      DatabaseSettings__DatabaseConnection: "host=db;port=5432;username=postgres;password=${POSTGRES_PASSWORD};database=${POSTGRES_DB_NAME:-edfi_datamanagementservice};Maximum Pool Size=${CMS_DB_MAX_POOL_SIZE:-20};"
+      DatabaseSettings__EncryptionKey: ${CMS_DATABASE_ENCRYPTION_KEY:?CMS_DATABASE_ENCRYPTION_KEY must be set in .env}
+      ClaimsOptions__ClaimsSource: Embedded
+      ClaimsOptions__DataStandardVersion: "5.2"
+      IdentitySettings__AllowRegistration: ${CMS_ALLOW_CLIENT_REGISTRATION:-false}
+      IdentitySettings__ConfigServiceRole: cms-client
+      IdentitySettings__ClientRole: dms-client
+      IdentitySettings__Authority: http://config:8081
+      IdentitySettings__Audience: account
+      IdentitySettings__ClientId: DmsConfigurationService
+      IdentitySettings__ClientSecret: ${CMS_SERVICE_CLIENT_SECRET:?CMS_SERVICE_CLIENT_SECRET must be set in .env}
+      IdentitySettings__RequireHttpsMetadata: "false"
+      IdentitySettings__RoleClaimType: http://schemas.microsoft.com/ws/2008/06/identity/claims/role
+      IdentitySettings__EncryptionKey: ${CMS_IDENTITY_ENCRYPTION_KEY:?CMS_IDENTITY_ENCRYPTION_KEY must be set in .env}
+      IdentitySettings__HashingIterations: "210000"
+      IdentitySettings__TokenCleanupEnabled: "true"
+      # DMS mints a new CMS token on every start; a per-client limit would eventually block startup.
+      IdentitySettings__BearerTokenPerClientLimit: "-1"
+      Cors__SwaggerUIOrigin: ${PUBLIC_ORIGIN:-https://localhost}
+      Serilog__MinimumLevel__Default: ${CMS_LOG_LEVEL:-Information}
+    depends_on:
+      db:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q --spider http://localhost:8081/health || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 18
+      start_period: 30s
+    restart: unless-stopped
+    logging: *logging
+
+  dms:
+    image: ${DMS_IMAGE:?DMS_IMAGE must be set in .env}
+    hostname: dms
+    environment:
+      ASPNETCORE_HTTP_PORTS: "8080"
+      AppSettings__PathBase: ${DMS_PATH_BASE:-api}
+      AppSettings__Datastore: postgresql
+      AppSettings__MultiTenancy: "false"
+      AppSettings__ReverseProxy__UseForwardedHeaders: "true"
+      AppSettings__ReverseProxy__KnownNetworks: ${TRUSTED_PROXY_NETWORKS:-10.0.0.0/8,172.16.0.0/12,192.168.0.0/16}
+      # DMS proxies /oauth/token to the CMS built-in OAuth2 server.
+      AppSettings__AuthenticationService: http://config:8081/connect/token
+      AppSettings__MaximumPageSize: ${MAXIMUM_PAGE_SIZE:-500}
+      AppSettings__DefaultPartitionCount: ${DEFAULT_PARTITION_COUNT:-10}
+      AppSettings__CorrelationIdHeader: correlationid
+      AppSettings__CorrelationIdMaxLength: "255"
+      AppSettings__MaskRequestBodyInLogs: ${MASK_REQUEST_BODY_IN_LOGS:-true}
+      AppSettings__EnableManagementEndpoints: "false"
+      # The ApiSchema files are staged into the api-schema volume by an init service (Task 4), so DMS
+      # never downloads packages at startup.
+      AppSettings__UseApiSchemaPath: "true"
+      AppSettings__ApiSchemaPath: /app/ApiSchema
+      SCHEMA_PACKAGES: "[]"
+      DatabaseOptions__IsolationLevel: ${DATABASE_ISOLATION_LEVEL:-ReadCommitted}
+      DATABASE_CONNECTION_STRING_ADMIN: "host=db;port=5432;username=postgres;password=${POSTGRES_PASSWORD};database=${POSTGRES_DB_NAME:-edfi_datamanagementservice};"
+      CircuitBreaker__FailureRatio: ${CIRCUIT_BREAKER_FAILURE_RATIO:-0.1}
+      CircuitBreaker__SamplingDurationSeconds: "120"
+      CircuitBreaker__MinimumThroughput: "20"
+      CircuitBreaker__BreakDurationSeconds: "30"
+      # DMS's own per-host rate limiter. Set high so the kit adds no throughput cap by default
+      # (NFR-PERF-1); use the NGINX rate limiting switches in .env to simulate limits instead.
+      RateLimit__PermitLimit: ${DMS_RATE_LIMIT_PERMIT_LIMIT:-1000000}
+      RateLimit__QueueLimit: "0"
+      RateLimit__Window: "10"
+      ConfigurationServiceSettings__BaseUrl: http://config:8081
+      ConfigurationServiceSettings__ClientId: CMSReadOnlyAccess
+      ConfigurationServiceSettings__Scope: edfi_admin_api/readonly_access
+      ConfigurationServiceSettings__ClientSecret: ${CMS_READONLY_CLIENT_SECRET:?CMS_READONLY_CLIENT_SECRET must be set in .env}
+      ConfigurationServiceSettings__EncryptionKey: ${CMS_DATABASE_ENCRYPTION_KEY}
+      JwtAuthentication__Authority: http://config:8081
+      JwtAuthentication__Audience: account
+      JwtAuthentication__MetadataAddress: http://config:8081/.well-known/openid-configuration
+      JwtAuthentication__RequireHttpsMetadata: "false"
+      JwtAuthentication__RoleClaimType: http://schemas.microsoft.com/ws/2008/06/identity/claims/role
+      JwtAuthentication__ClientRole: dms-client
+      Cors__SwaggerUIOrigin: ${PUBLIC_ORIGIN:-https://localhost}
+      Serilog__MinimumLevel__Default: ${DMS_LOG_LEVEL:-Information}
+    volumes:
+      - api-schema:/app/ApiSchema:ro
+    depends_on:
+      config:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q --spider http://localhost:8080/health || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 18
+      start_period: 30s
+    restart: unless-stopped
+    logging: *logging
+
+volumes:
+  db-data:
+  # DS 5.2 ApiSchema files, written by the init service in compose.init.yml and read by DMS.
+  api-schema:

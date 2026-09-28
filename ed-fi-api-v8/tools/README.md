@@ -130,7 +130,8 @@ The feed also carries BulkLoadClient `7.3.20185` (newer). It is not used, becaus
 
 ## Not yet verified (for the Task 1 spike)
 
-This environment had no Docker daemon. The Dockerfile passes `hadolint` 2.15.1 with no findings. Its
+This environment had no Docker daemon. The Dockerfile passes `hadolint` 2.15.1 with no findings; older releases such as 2.12.0 report
+`DL3006` on the `ARG`-based `FROM` lines, a false positive because the images are digest-pinned. Its
 build-stage shell logic (download, hash check, tool install, and flatten) was run locally with the
 same commands, and both tools ran on a host .NET 10.0.11 runtime. Still unproven:
 

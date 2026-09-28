@@ -1,0 +1,22 @@
+# SPDX-License-Identifier: Apache-2.0
+# Licensed to the Ed-Fi Alliance under one or more agreements.
+# The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
+# See the LICENSE and NOTICES files in the project root for more information.
+
+# Ed-Fi API v8 client integration pilot kit.
+#
+# The topology is split by concern so that changes to one area rarely touch another:
+#   compose.core.yml     PostgreSQL, Configuration Management Service (CMS), Ed-Fi API v8 (DMS)
+#   compose.init.yml     the locally built tools image and the one-shot initialization services
+#   compose.ingress.yml  NGINX (the only published service), Swagger UI, PGAdmin
+#
+# All configuration comes from .env in this directory (copy .env.example). Do not edit these files to
+# configure the kit, and do not use --env-file: included files also read ./.env, so an alternate file
+# is only honored when ./.env does not exist.
+
+name: ${KIT_PROJECT_NAME:-edfi-pilot}
+
+include:
+  - compose.core.yml
+  - compose.init.yml
+  - compose.ingress.yml

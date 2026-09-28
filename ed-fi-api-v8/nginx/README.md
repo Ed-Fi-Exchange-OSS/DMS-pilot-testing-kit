@@ -21,7 +21,7 @@ NGINX is the kit's single HTTPS ingress. It uses the official `nginx` image (1.2
 | `/${DMS_PATH_BASE}` and `/${DMS_PATH_BASE}/` | `dms:8080` | kept (DMS runs with `PathBase`) |
 | `/${CMS_PATH_BASE}` and `/${CMS_PATH_BASE}/` | `config:8081` | kept (CMS runs with `PathBase`) |
 | `/swagger/` (`/swagger` 301s) | `swagger-ui:80` | stripped; `X-Forwarded-Prefix: /swagger` |
-| `/pgadmin/` (`/pgadmin` 301s) | `pgadmin:80` | kept; `X-Script-Name: /pgadmin`, WebSockets |
+| `/pgadmin/` (`/pgadmin` 301s) | `pgadmin:80` | kept (pgAdmin runs with `SCRIPT_NAME=/pgadmin`); WebSockets |
 | `/data/v3/...` | `dms:8080` as `/${DMS_PATH_BASE}/data/...` | rewritten if enabled; else JSON 404 |
 | `/nginx-health` | none | returns 200; for the container health check |
 | anything else | none | JSON 404 listing the routes |

@@ -1,3 +1,10 @@
 # temporary
 ods-api-compose/
 dms-compose/
+
+# Ed-Fi API v8 kit: local configuration, generated secrets, and runtime output
+ed-fi-api-v8/.env
+ed-fi-api-v8/.runtime/
+ed-fi-api-v8/logs/
+ed-fi-api-v8/ssl/server.crt
+ed-fi-api-v8/ssl/server.key
