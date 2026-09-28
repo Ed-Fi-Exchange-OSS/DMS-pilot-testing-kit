@@ -1,0 +1,26 @@
+# SPDX-License-Identifier: Apache-2.0
+# Licensed to the Ed-Fi Alliance under one or more agreements.
+# The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
+# See the LICENSE and NOTICES files in the project root for more information.
+
+# The locally built tools image and the one-shot initialization services that use it.
+# The init services (identity, schema, data store, template, bootstrap) are added in later tasks.
+
+services:
+  # Interactive and scripted access to the tools image, for example:
+  #   docker compose run --rm tools api-schema-tools --version
+  # Only this service carries the build: section; init services reuse the same image tag.
+  tools:
+    image: edfi-pilot-tools:local
+    build:
+      context: ./tools
+      args:
+        DOTNET_SDK_IMAGE: ${DOTNET_SDK_IMAGE:?DOTNET_SDK_IMAGE must be set in .env}
+        DOTNET_RUNTIME_IMAGE: ${DOTNET_RUNTIME_IMAGE:?DOTNET_RUNTIME_IMAGE must be set in .env}
+        SCHEMATOOLS_VERSION: ${SCHEMATOOLS_VERSION:?SCHEMATOOLS_VERSION must be set in .env}
+        SCHEMATOOLS_SHA256: ${SCHEMATOOLS_SHA256:?SCHEMATOOLS_SHA256 must be set in .env}
+        BULKLOADCLIENT_VERSION: ${BULKLOADCLIENT_VERSION:?BULKLOADCLIENT_VERSION must be set in .env}
+        BULKLOADCLIENT_SHA256: ${BULKLOADCLIENT_SHA256:?BULKLOADCLIENT_SHA256 must be set in .env}
+    profiles: ["tools"]
+    volumes:
+      - api-schema:/app/ApiSchema

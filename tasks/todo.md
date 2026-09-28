@@ -15,8 +15,11 @@ Docker daemon. They are uncommitted and still need a real `docker compose up` ru
 - Task 4 (partial): `ed-fi-api-v8/tools/Dockerfile`
 - Tasks 5, 6, 15 (NGINX parts): `ed-fi-api-v8/nginx/`, `ed-fi-api-v8/ssl/`
 - Task 7: `ed-fi-api-v8/swagger-ui/`, `ed-fi-api-v8/pgadmin/`
+- Task 2 (static checks only): `compose.yml` plus `compose.{core,init,ingress}.yml`, `.env.example`,
+  `.gitignore`. `docker compose config` passes, and every pinned image digest exists in its registry.
+  Still to verify: `up -d db config` reaching healthy.
 
-Each README lists the entries still to add to `compose.yml`, `.env.example`, and `.gitignore`.
+The ingress, Swagger UI, PGAdmin, and tools entries from the READMEs are now wired into the compose files.
 
 ---
 

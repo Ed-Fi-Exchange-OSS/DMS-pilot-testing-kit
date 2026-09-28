@@ -189,7 +189,6 @@ server {
         set $kit_service pgadmin;
         set $kit_upstream pgadmin:80;
         include /etc/nginx/conf.d/snippets/kit-proxy.conf;
-        proxy_set_header X-Script-Name /pgadmin;
         proxy_set_header Upgrade $http_upgrade;
         proxy_set_header Connection $kit_connection_upgrade;
     }

@@ -53,7 +53,7 @@ Serve the files with any static NGINX image. Reuse the kit's pinned NGINX image 
     command: >
       sh -c "envsubst '$$DMS_BASE_PATH $$DMS_SWAGGER_UI_ENABLE_CUSTOM_DOMAINS'
              < /tmp/swagger-template/index.html > /usr/share/nginx/html/index.html &&
-             cp /tmp/swagger-template/*.js /tmp/swagger-template/favicon.ico /usr/share/nginx/html/ &&
+             cp /tmp/swagger-template/*.js /tmp/swagger-template/favicon.png /usr/share/nginx/html/ &&
              exec nginx -g 'daemon off;'"
     healthcheck:
       test: ["CMD-SHELL", "wget -q --spider http://127.0.0.1/ || exit 1"]
@@ -79,7 +79,7 @@ Notes:
   `location /swagger/ { proxy_pass http://swagger-ui:80/; }`, with a trailing slash on `proxy_pass`.
 - Redirect the bare path so relative assets resolve under `/swagger/`:
   `location = /swagger { return 301 /swagger/; }`. All asset references in `index.html` are
-  relative (`favicon.ico`, `edfi-*.js`, `swagger-initializer.js`), so they work under `/swagger/`.
+  relative (`favicon.png`, `edfi-*.js`, `swagger-initializer.js`), so they work under `/swagger/`.
   An absolute path such as `/swagger-initializer.js` would not.
 - DMS must be reachable on the same origin at `DMS_BASE_PATH`, including `/api/metadata/...` and
   `/api/oauth/token`.

@@ -1,0 +1,99 @@
+# SPDX-License-Identifier: Apache-2.0
+# Licensed to the Ed-Fi Alliance under one or more agreements.
+# The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
+# See the LICENSE and NOTICES files in the project root for more information.
+
+# NGINX is the only service that publishes ports, bound to loopback by default. Swagger UI and
+# PGAdmin are reachable only through it. See nginx/README.md for the routing contract.
+
+x-logging: &logging
+  driver: json-file
+  options:
+    max-size: "${DOCKER_LOG_MAX_SIZE:-50m}"
+    max-file: "${DOCKER_LOG_MAX_FILE:-5}"
+
+services:
+  nginx:
+    image: ${NGINX_IMAGE:?NGINX_IMAGE must be set in .env}
+    environment:
+      HTTPS_PORT: ${HTTPS_PORT:-443}
+      DMS_PATH_BASE: ${DMS_PATH_BASE:-api}
+      CMS_PATH_BASE: ${CMS_PATH_BASE:-config}
+      DATA_V3_REWRITE_ENABLED: ${DATA_V3_REWRITE_ENABLED:-true}
+      RATE_LIMIT_ENABLED: ${RATE_LIMIT_ENABLED:-false}
+      RATE_LIMIT_RATE: ${RATE_LIMIT_RATE:-50r/s}
+      RATE_LIMIT_BURST: ${RATE_LIMIT_BURST:-100}
+      CLIENT_MAX_BODY_SIZE: ${CLIENT_MAX_BODY_SIZE:-100m}
+      PROXY_CONNECT_TIMEOUT: ${PROXY_CONNECT_TIMEOUT:-5s}
+      PROXY_SEND_TIMEOUT: ${PROXY_SEND_TIMEOUT:-300s}
+      PROXY_READ_TIMEOUT: ${PROXY_READ_TIMEOUT:-300s}
+    ports:
+      # The host HTTPS port must equal HTTPS_PORT: redirects and forwarded headers use it.
+      - "${BIND_ADDRESS:-127.0.0.1}:${HTTPS_PORT:-443}:443"
+      - "${BIND_ADDRESS:-127.0.0.1}:${HTTP_PORT:-80}:80"
+    volumes:
+      - ./nginx/templates:/etc/nginx/templates:ro
+      - ./nginx/entrypoint.d/40-kit-features.sh:/docker-entrypoint.d/40-kit-features.sh:ro
+      - ./ssl:/ssl:ro
+      - ${LOG_DIR:-./logs}/nginx:/var/log/nginx/kit
+    # No depends_on: upstreams are resolved per request, so NGINX starts (and serves 503s) even
+    # when a backend is down.
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fsk https://localhost/nginx-health || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 6
+      start_period: 5s
+    restart: unless-stopped
+    logging: *logging
+
+  swagger-ui:
+    image: ${NGINX_IMAGE}
+    environment:
+      DMS_BASE_PATH: /${DMS_PATH_BASE:-api}
+      DMS_SWAGGER_UI_ENABLE_CUSTOM_DOMAINS: ${DMS_SWAGGER_UI_ENABLE_CUSTOM_DOMAINS:-true}
+    volumes:
+      - ./swagger-ui:/tmp/swagger-template:ro
+    # sh -c bypasses the image's template processing on purpose; see swagger-ui/README.md.
+    command: >
+      sh -c "envsubst '$$DMS_BASE_PATH $$DMS_SWAGGER_UI_ENABLE_CUSTOM_DOMAINS'
+             < /tmp/swagger-template/index.html > /usr/share/nginx/html/index.html &&
+             cp /tmp/swagger-template/*.js /tmp/swagger-template/favicon.png /usr/share/nginx/html/ &&
+             exec nginx -g 'daemon off;'"
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q --spider http://127.0.0.1/ || exit 1"]
+      interval: 10s
+      timeout: 3s
+      retries: 6
+      start_period: 5s
+    restart: unless-stopped
+    logging: *logging
+
+  pgadmin:
+    image: ${PGADMIN_IMAGE:?PGADMIN_IMAGE must be set in .env}
+    environment:
+      SCRIPT_NAME: /pgadmin
+      PGADMIN_DEFAULT_EMAIL: ${PGADMIN_DEFAULT_EMAIL:-admin@example.com}
+      PGADMIN_DEFAULT_PASSWORD: ${PGADMIN_DEFAULT_PASSWORD:?PGADMIN_DEFAULT_PASSWORD must be set in .env}
+      PGADMIN_CONFIG_SERVER_MODE: "True"
+      PGADMIN_REPLACE_SERVERS_ON_STARTUP: "True"
+      PGADMIN_CONFIG_UPGRADE_CHECK_ENABLED: "False"
+      PGADMIN_DISABLE_POSTFIX: "true"
+      PGADMIN_LISTEN_PORT: "80"
+    volumes:
+      - pgadmin-data:/var/lib/pgadmin
+      - ./pgadmin/servers.json:/pgadmin4/servers.json:ro
+    depends_on:
+      db:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q -O /dev/null http://127.0.0.1:80/pgadmin/misc/ping || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 30s
+    restart: unless-stopped
+    logging: *logging
+
+volumes:
+  pgadmin-data:
