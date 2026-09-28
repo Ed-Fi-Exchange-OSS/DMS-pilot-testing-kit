@@ -409,6 +409,10 @@ has no standard claim set at all.
   claim sets SHALL be used for each integration shape, the Data Warehouse claim
   set SHALL be provisioned there as well, and documentation SHALL note any
   naming or capability differences between the two platforms.
+- **FR-CLAIM-14:** Documentation SHALL describe how to send a POST request to
+  the `/management/reload-claimsets` endpoint to force an immediate reload of
+  claim set information, since the Ed-Fi API v8 caches claim sets and does not
+  otherwise see a new or changed claim set until that cache expires.
 
 ### 3.7 Credential Provisioning
 
