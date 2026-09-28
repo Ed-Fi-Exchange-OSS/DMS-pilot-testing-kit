@@ -278,6 +278,47 @@ Leave the standard claim sets untouched (FR-CLAIM-5..9).
 **Files likely touched:** `ed-fi-api-v8/bootstrap/claimsets/DataWarehouse.json`, `ed-fi-api-v8/init/bootstrap.sh`
 **Estimated scope:** S
 
+## Task 18: Enable the DMS claim set reload endpoint
+
+Numbered 18 so that the references to Tasks 12–17 stay valid; it belongs to Phase 3.
+
+**Description:** DMS caches claim sets (`ClaimSetsCacheExpirationSeconds`, 600 s). In the spike, a
+claim set imported while DMS was running returned HTTP 500 `No security metadata has been configured
+for this resource` until the cache refreshed. Enable the DMS management endpoint that forces a reload,
+so that both bootstrap and participants can apply claim set changes immediately (FR-CLAIM-14).
+
+1. Confirm the exact route, method, and authorization with the pinned DMS image. The PRD names
+   `POST /management/reload-claimsets`, which would be `/api/management/reload-claimsets` behind NGINX.
+   The image exposes the `AppSettings:EnableManagementEndpoints`, `AppSettings:EnableClaimsetReload`, and
+   `AppSettings:ManagementEndpoints:RequiredRole` settings, but the spike didn't call the endpoint. Don't
+   confuse it with CMS's `/management/reload-claims`.
+2. In `compose.core.yml`, drive the settings from `.env`. Replace the current hard-coded
+   `AppSettings__EnableManagementEndpoints: "false"`, and add `AppSettings__EnableClaimsetReload`. Set
+   a required role so that only an administrative client can call the endpoint, not a participant
+   integration credential.
+3. Decide which credential calls it (the `PilotKitAdmin` CMS client, or the bootstrap credential), and
+   give that client the role through the identity init (Task 3).
+4. After the DataWarehouse import (Task 11), have bootstrap call the endpoint so that the claim set is
+   usable before startup reports success. This removes the up-to-10-minute window.
+5. Confirm that NGINX routes the endpoint under `/api` and applies no rate limit or rewrite to it.
+6. Supply the request, and the credential it needs, to the participant docs (Task 16) and a `.http`
+   example (Task 14).
+
+**Acceptance criteria:**
+- [ ] With DMS running, importing a new claim set and then POSTing to the reload endpoint makes a
+      credential with that claim set succeed immediately, with no 500 and no restart
+- [ ] The endpoint rejects a participant integration credential (401 or 403) and an anonymous request
+- [ ] With the `.env` switch off, the endpoint isn't available (404), and the rest of the stack is unchanged
+- [ ] Bootstrap calls the endpoint after provisioning DataWarehouse, and a failure names the step (FR-BOOT-9)
+
+**Verification:**
+- [ ] Manual: import a throwaway claim set, reload, then GET with a credential that uses it → 200 at once
+- [ ] Scripted check in the smoke test (Task 14)
+
+**Dependencies:** Task 11 (and Task 5 for the NGINX route)
+**Files likely touched:** `ed-fi-api-v8/compose.core.yml`, `ed-fi-api-v8/.env.example`, `ed-fi-api-v8/init/identity.sh`, `ed-fi-api-v8/init/bootstrap.sh`, nginx template
+**Estimated scope:** S
+
 ### Checkpoint C
 - [ ] Reset, then start on minimal; reset, then start on populated; each followed by a second start: no errors and no duplicates
 
@@ -405,6 +446,7 @@ isn't ready (FR-CRED-1..10). The logic could live in the tool container, as
 - certificate trust for .NET, JavaScript, and Python
 - the bootstrap credential: its scope, warning, and removal
 - the DataWarehouse claim set as a kit addition, with a feedback ask
+- how to POST to the claim set reload endpoint to apply claim set changes immediately (FR-CLAIM-14, Task 18)
 - the `/data/v3` caveat
 - the contents of the populated template
 - what the logs capture
@@ -422,7 +464,7 @@ Update the root `README.md` to link to it.
 **Verification:**
 - [ ] A fresh reader follows it on a clean host for both templates (FR-DOC-7)
 
-**Dependencies:** Tasks 12–15
+**Dependencies:** Tasks 12–15, 18
 **Files likely touched:** `ed-fi-api-v8/README.md`, `ed-fi-api-v8/docs/*.md`, `README.md`
 **Estimated scope:** M
 
