@@ -139,6 +139,7 @@ Tasks are listed in detail in [todo.md](./todo.md). Summary:
 - [ ] Task 9: Populated template, with fail-fast on missing source
 - [ ] Task 10: Bootstrap credential and baseline education organization hierarchy
 - [ ] Task 11: Data Warehouse claim set provisioning
+- [ ] Task 18: Enable the DMS claim set reload endpoint, called by bootstrap and documented for participants (FR-CLAIM-14)
 
 ### Checkpoint C: clean start on both templates, re-run creates no duplicates
 
@@ -158,7 +159,8 @@ Tasks are listed in detail in [todo.md](./todo.md). Summary:
 
 ## Parallelization
 
-After Checkpoint A, Tasks 5–7 (ingress) and Tasks 8–11 (data) are independent. After Checkpoint C,
+After Checkpoint A, Tasks 5–7 (ingress) and Tasks 8–11 (data) are independent. Task 18 follows
+Task 11 and needs the NGINX route from Task 5. After Checkpoint C,
 Tasks 13, 14, and 15 can run in parallel. Task 16 can start in outline form anytime, but is finished last.
 
 ## Risks and Mitigations
@@ -171,7 +173,8 @@ Tasks 13, 14, and 15 can run in parallel. Task 16 can start in outline form anyt
 | No CMS mechanism to *add* a claim set declaratively | Med | Task 1 evaluates the CMS `/v3/claimSets` create/import API; Task 11 uses whichever works and is idempotent. |
 | Swagger UI and DMS generate `localhost:8080` URLs behind a proxy | Med | Forwarded headers and `PathBase` in Task 5; rewrite Swagger UI's spec URLs to be relative in Task 7. |
 | Self-signed certificate friction (PRD-known) | Med | Certificate scripts plus per-ecosystem trust guidance (Task 5, Task 16). |
-| Newly created CMS client returns 401 briefly (cache) | Low | Retry with backoff in the bootstrap and credential scripts. |
+| Newly created CMS client returns 401 briefly (cache) | Low | Retry with backoff in the bootstrap and credential scripts. The spike saw no 401 window. |
+| DMS caches claim sets for up to 10 minutes, so a new or changed claim set returns 500 until the cache refreshes (seen in the spike) | Med | Task 18 enables the claim set reload endpoint; bootstrap calls it after provisioning DataWarehouse, and the docs show participants how to call it (FR-CLAIM-14). |
 | Windows line endings breaking `sh` scripts in containers | Low | `.gitattributes` already forces LF; add a CI lint. |
 
 ## Decisions (answered 2026-09-28)
