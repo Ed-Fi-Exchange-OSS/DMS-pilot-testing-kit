@@ -66,6 +66,7 @@ services:
       IdentitySettings__RequireHttpsMetadata: "false"
       IdentitySettings__RoleClaimType: http://schemas.microsoft.com/ws/2008/06/identity/claims/role
       IdentitySettings__EncryptionKey: ${CMS_IDENTITY_ENCRYPTION_KEY:?CMS_IDENTITY_ENCRYPTION_KEY must be set in .env}
+      # Must equal HASH_ITERATIONS on init-identity (compose.init.yml), which hashes the client secrets.
       IdentitySettings__HashingIterations: "210000"
       IdentitySettings__TokenCleanupEnabled: "true"
       # DMS mints a new CMS token on every start; a per-client limit would eventually block startup.
@@ -136,6 +137,9 @@ services:
     depends_on:
       config:
         condition: service_healthy
+      # Defined in compose.init.yml. DMS needs its CMS client at startup.
+      init-identity:
+        condition: service_completed_successfully
     healthcheck:
       test: ["CMD-SHELL", "wget -q --spider http://localhost:8080/health || exit 1"]
       interval: 10s
