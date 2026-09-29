@@ -21,7 +21,9 @@ The sandbox still has no Docker daemon, so new work is drafted here and verified
   unchecked below were tested only in the sandbox (secret rotation, invalid secrets, TPDM restaging).
 - Tasks 8 and 11: done and verified on the host (clean minimal load, rerun skip, template-change
   warning, DataWarehouse import with no warnings). DataWarehouse credential checks wait for Task 13.
-- Next: Task 10 (bootstrap credential and baseline hierarchy), then Tasks 9 and 18.
+- Task 10: done and verified on the host (5 baseline records, credentials file readable by the host
+  user, rerun reuses the credential and creates nothing, a deleted school is recreated).
+- Next: Task 9 (populated template) and Task 18 (claim set reload endpoint), then Phase 4.
 
 ---
 
@@ -341,12 +343,12 @@ EdFiSandbox reads `people` through `RelationshipsWithEdOrgsAndPeople`, so the bo
 can't read arbitrary students.
 
 **Acceptance criteria:**
-- [ ] Clean minimal start → 5 education organizations exist; credentials file written with IDs
-- [ ] Re-run → no duplicate vendor, application, or education organizations; missing records are recreated (FR-BOOT-4/5)
+- [x] Clean minimal start → 5 education organizations exist; credentials file written with IDs
+- [x] Re-run → no duplicate vendor, application, or education organizations; missing records are recreated (FR-BOOT-4/5)
 - [ ] Works on the populated template too, with IDs that don't collide (FR-EDORG-8)
 
 **Verification:**
-- [ ] `GET /api/data/ed-fi/schools?localEducationAgencyId=<LEA>` → 3 schools
+- [x] `GET /api/data/ed-fi/schools?localEducationAgencyId=<LEA>` → 3 schools
 
 **Dependencies:** Task 8 (descriptors present)
 **Files likely touched:** `ed-fi-api-v8/init/bootstrap.sh`, `ed-fi-api-v8/bootstrap/baseline-edorgs.json`, `ed-fi-api-v8/compose.yml`
