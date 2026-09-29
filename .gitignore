@@ -8,3 +8,6 @@ ed-fi-api-v8/.runtime/
 ed-fi-api-v8/logs/
 ed-fi-api-v8/ssl/server.crt
 ed-fi-api-v8/ssl/server.key
+
+# Claude Code agent worktrees
+.claude/worktrees/

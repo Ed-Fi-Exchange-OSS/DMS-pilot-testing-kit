@@ -19,7 +19,9 @@ The sandbox still has no Docker daemon, so new work is drafted here and verified
   are fixed in `tools/Dockerfile`, pending a host rebuild.
 - Tasks 3 and 4: done, and Checkpoint A's clean start and no-op rerun pass on the host. Items still
   unchecked below were tested only in the sandbox (secret rotation, invalid secrets, TPDM restaging).
-- Next: Phase 2 rechecks (Tasks 5–7) and Phase 3 (Tasks 8–11).
+- Tasks 8 and 11: done and verified on the host (clean minimal load, rerun skip, template-change
+  warning, DataWarehouse import with no warnings). DataWarehouse credential checks wait for Task 13.
+- Next: Task 10 (bootstrap credential and baseline hierarchy), then Tasks 9 and 18.
 
 ---
 
@@ -176,8 +178,7 @@ Also:
 **Estimated scope:** M
 
 ### Checkpoint A
-- [ ] Clean-volume `up --wait` succeeds; restart preserves data; second `up` is a no-op (clean start
-      and no-op rerun verified; restart preserving data not yet checked)
+- [x] Clean-volume `up --wait` succeeds; restart preserves data; second `up` is a no-op
 - [ ] Review with human before proceeding
 
 ---
@@ -280,7 +281,7 @@ From the spike (Q9):
 
 **Acceptance criteria:**
 - [ ] Clean start with the default → descriptor endpoints are populated; no education organizations exist
-- [ ] Restart does not reload; changing `DATABASE_TEMPLATE` without a reset prints "requires reset" and does not reload
+- [x] Restart does not reload; changing `DATABASE_TEMPLATE` without a reset prints "requires reset" and does not reload
 - [ ] Partial failure leaves no marker, so the next start retries
 
 **Verification:**

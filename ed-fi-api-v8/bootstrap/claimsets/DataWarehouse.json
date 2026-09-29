@@ -1,0 +1,467 @@
+{
+  "claimSetName": "DataWarehouse",
+  "resourceClaims": [
+    {
+      "name": "edFiTypes",
+      "claimName": "http://ed-fi.org/identity/claims/domains/edFiTypes",
+      "parentClaimName": null,
+      "actions": [
+        {
+          "name": "Read",
+          "enabled": true
+        },
+        {
+          "name": "ReadChanges",
+          "enabled": true
+        }
+      ],
+      "authorizationStrategyOverrides": [
+        {
+          "actionName": "Read",
+          "authorizationStrategies": [
+            {
+              "name": "NoFurtherAuthorizationRequired"
+            }
+          ]
+        },
+        {
+          "actionName": "ReadChanges",
+          "authorizationStrategies": [
+            {
+              "name": "NoFurtherAuthorizationRequired"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "systemDescriptors",
+      "claimName": "http://ed-fi.org/identity/claims/domains/systemDescriptors",
+      "parentClaimName": null,
+      "actions": [
+        {
+          "name": "Read",
+          "enabled": true
+        },
+        {
+          "name": "ReadChanges",
+          "enabled": true
+        }
+      ],
+      "authorizationStrategyOverrides": [
+        {
+          "actionName": "Read",
+          "authorizationStrategies": [
+            {
+              "name": "NoFurtherAuthorizationRequired"
+            }
+          ]
+        },
+        {
+          "actionName": "ReadChanges",
+          "authorizationStrategies": [
+            {
+              "name": "NoFurtherAuthorizationRequired"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "managedDescriptors",
+      "claimName": "http://ed-fi.org/identity/claims/domains/managedDescriptors",
+      "parentClaimName": null,
+      "actions": [
+        {
+          "name": "Read",
+          "enabled": true
+        },
+        {
+          "name": "ReadChanges",
+          "enabled": true
+        }
+      ],
+      "authorizationStrategyOverrides": [
+        {
+          "actionName": "Read",
+          "authorizationStrategies": [
+            {
+              "name": "NoFurtherAuthorizationRequired"
+            }
+          ]
+        },
+        {
+          "actionName": "ReadChanges",
+          "authorizationStrategies": [
+            {
+              "name": "NoFurtherAuthorizationRequired"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "educationOrganizations",
+      "claimName": "http://ed-fi.org/identity/claims/domains/educationOrganizations",
+      "parentClaimName": null,
+      "actions": [
+        {
+          "name": "Read",
+          "enabled": true
+        },
+        {
+          "name": "ReadChanges",
+          "enabled": true
+        }
+      ],
+      "authorizationStrategyOverrides": [
+        {
+          "actionName": "Read",
+          "authorizationStrategies": [
+            {
+              "name": "NoFurtherAuthorizationRequired"
+            }
+          ]
+        },
+        {
+          "actionName": "ReadChanges",
+          "authorizationStrategies": [
+            {
+              "name": "NoFurtherAuthorizationRequired"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "people",
+      "claimName": "http://ed-fi.org/identity/claims/domains/people",
+      "parentClaimName": null,
+      "actions": [
+        {
+          "name": "Read",
+          "enabled": true
+        },
+        {
+          "name": "ReadChanges",
+          "enabled": true
+        }
+      ],
+      "authorizationStrategyOverrides": [
+        {
+          "actionName": "Read",
+          "authorizationStrategies": [
+            {
+              "name": "NoFurtherAuthorizationRequired"
+            }
+          ]
+        },
+        {
+          "actionName": "ReadChanges",
+          "authorizationStrategies": [
+            {
+              "name": "NoFurtherAuthorizationRequired"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "relationshipBasedData",
+      "claimName": "http://ed-fi.org/identity/claims/domains/relationshipBasedData",
+      "parentClaimName": null,
+      "actions": [
+        {
+          "name": "Read",
+          "enabled": true
+        },
+        {
+          "name": "ReadChanges",
+          "enabled": true
+        }
+      ],
+      "authorizationStrategyOverrides": [
+        {
+          "actionName": "Read",
+          "authorizationStrategies": [
+            {
+              "name": "NoFurtherAuthorizationRequired"
+            }
+          ]
+        },
+        {
+          "actionName": "ReadChanges",
+          "authorizationStrategies": [
+            {
+              "name": "NoFurtherAuthorizationRequired"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "assessmentMetadata",
+      "claimName": "http://ed-fi.org/identity/claims/domains/assessmentMetadata",
+      "parentClaimName": null,
+      "actions": [
+        {
+          "name": "Read",
+          "enabled": true
+        },
+        {
+          "name": "ReadChanges",
+          "enabled": true
+        }
+      ],
+      "authorizationStrategyOverrides": [
+        {
+          "actionName": "Read",
+          "authorizationStrategies": [
+            {
+              "name": "NoFurtherAuthorizationRequired"
+            }
+          ]
+        },
+        {
+          "actionName": "ReadChanges",
+          "authorizationStrategies": [
+            {
+              "name": "NoFurtherAuthorizationRequired"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "educationStandards",
+      "claimName": "http://ed-fi.org/identity/claims/domains/educationStandards",
+      "parentClaimName": null,
+      "actions": [
+        {
+          "name": "Read",
+          "enabled": true
+        },
+        {
+          "name": "ReadChanges",
+          "enabled": true
+        }
+      ],
+      "authorizationStrategyOverrides": [
+        {
+          "actionName": "Read",
+          "authorizationStrategies": [
+            {
+              "name": "NoFurtherAuthorizationRequired"
+            }
+          ]
+        },
+        {
+          "actionName": "ReadChanges",
+          "authorizationStrategies": [
+            {
+              "name": "NoFurtherAuthorizationRequired"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "primaryRelationships",
+      "claimName": "http://ed-fi.org/identity/claims/domains/primaryRelationships",
+      "parentClaimName": null,
+      "actions": [
+        {
+          "name": "Read",
+          "enabled": true
+        },
+        {
+          "name": "ReadChanges",
+          "enabled": true
+        }
+      ],
+      "authorizationStrategyOverrides": [
+        {
+          "actionName": "Read",
+          "authorizationStrategies": [
+            {
+              "name": "NoFurtherAuthorizationRequired"
+            }
+          ]
+        },
+        {
+          "actionName": "ReadChanges",
+          "authorizationStrategies": [
+            {
+              "name": "NoFurtherAuthorizationRequired"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "educationContent",
+      "claimName": "http://ed-fi.org/identity/claims/ed-fi/educationContent",
+      "parentClaimName": null,
+      "actions": [
+        {
+          "name": "Read",
+          "enabled": true
+        },
+        {
+          "name": "ReadChanges",
+          "enabled": true
+        }
+      ],
+      "authorizationStrategyOverrides": [
+        {
+          "actionName": "Read",
+          "authorizationStrategies": [
+            {
+              "name": "NoFurtherAuthorizationRequired"
+            }
+          ]
+        },
+        {
+          "actionName": "ReadChanges",
+          "authorizationStrategies": [
+            {
+              "name": "NoFurtherAuthorizationRequired"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "finance",
+      "claimName": "http://ed-fi.org/identity/claims/domains/finance",
+      "parentClaimName": null,
+      "actions": [
+        {
+          "name": "Read",
+          "enabled": true
+        },
+        {
+          "name": "ReadChanges",
+          "enabled": true
+        }
+      ],
+      "authorizationStrategyOverrides": [
+        {
+          "actionName": "Read",
+          "authorizationStrategies": [
+            {
+              "name": "NoFurtherAuthorizationRequired"
+            }
+          ]
+        },
+        {
+          "actionName": "ReadChanges",
+          "authorizationStrategies": [
+            {
+              "name": "NoFurtherAuthorizationRequired"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "crisisEvent",
+      "claimName": "http://ed-fi.org/identity/claims/ed-fi/crisisEvent",
+      "parentClaimName": null,
+      "actions": [
+        {
+          "name": "Read",
+          "enabled": true
+        },
+        {
+          "name": "ReadChanges",
+          "enabled": true
+        }
+      ],
+      "authorizationStrategyOverrides": [
+        {
+          "actionName": "Read",
+          "authorizationStrategies": [
+            {
+              "name": "NoFurtherAuthorizationRequired"
+            }
+          ]
+        },
+        {
+          "actionName": "ReadChanges",
+          "authorizationStrategies": [
+            {
+              "name": "NoFurtherAuthorizationRequired"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "studentHealth",
+      "claimName": "http://ed-fi.org/identity/claims/ed-fi/studentHealth",
+      "parentClaimName": null,
+      "actions": [
+        {
+          "name": "Read",
+          "enabled": true
+        },
+        {
+          "name": "ReadChanges",
+          "enabled": true
+        }
+      ],
+      "authorizationStrategyOverrides": [
+        {
+          "actionName": "Read",
+          "authorizationStrategies": [
+            {
+              "name": "NoFurtherAuthorizationRequired"
+            }
+          ]
+        },
+        {
+          "actionName": "ReadChanges",
+          "authorizationStrategies": [
+            {
+              "name": "NoFurtherAuthorizationRequired"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "snapshot",
+      "claimName": "http://ed-fi.org/identity/claims/publishing/snapshot",
+      "parentClaimName": null,
+      "actions": [
+        {
+          "name": "Read",
+          "enabled": true
+        },
+        {
+          "name": "ReadChanges",
+          "enabled": true
+        }
+      ],
+      "authorizationStrategyOverrides": [
+        {
+          "actionName": "Read",
+          "authorizationStrategies": [
+            {
+              "name": "NoFurtherAuthorizationRequired"
+            }
+          ]
+        },
+        {
+          "actionName": "ReadChanges",
+          "authorizationStrategies": [
+            {
+              "name": "NoFurtherAuthorizationRequired"
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}
