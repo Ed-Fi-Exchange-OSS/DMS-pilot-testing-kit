@@ -42,25 +42,49 @@ mounted directory), not analysis.
 - **Swagger UI is hard-coded to `http://localhost:8080`.** It must be
   repointed to the NGINX routes.
 - **No feature flags were found** for change queries, Profiles, ETags, or
-  cursor paging. They appear to be always on; the spike verifies this.
+  cursor paging. *Confirmed by the spike:* all are on by default.
 - **`SISVendor` and `AssessmentVendor`** are never referenced in the copied
-  files, so we don't yet know whether CMS embeds them. The spike verifies
-  this. CMS claim-set *fragments* can only extend existing claim sets, so a
-  new "DataWarehouse" set probably needs the CMS claim-set API.
+  files. *Confirmed by the spike:* CMS embeds both, along with `EdFiSandbox`
+  and `SeedLoader`. A new "DataWarehouse" set needs
+  `POST /v3/claimSets/import`, because claim-set fragments can only extend
+  existing sets.
+
+## What the Phase 0 spike changed
+
+Details and evidence are in [spike-notes.md](./spike-notes.md).
+
+- **Startup order is strict.** DMS exits in a restart loop without a
+  registered data store or without its ApiSchema files. The init chain is
+  `db` → `config` → `init-identity` → `init-datastore` (and
+  `init-claimsets`), with `init-api-schema` → `init-schema` in parallel,
+  then `dms`.
+- **Identity needs no pre-CMS step.** CMS creates its own tables and reads
+  the signing key lazily, so one service after CMS is healthy is enough.
+- **Docker copy-up can silently add TPDM.** An empty `api-schema` volume
+  first mounted by DMS is filled with the image's core + TPDM schema. The
+  staging step must finish before DMS mounts the volume, and must detect and
+  replace that content.
+- **DMS caches CMS data.** A claim set imported while DMS runs returns 500
+  for up to 10 minutes, and a new Profile returns 406 for up to 30 minutes.
+  Kit claim sets are therefore imported before DMS starts.
+- **The populated template's SeedLoader credential** needs the sample
+  education organization IDs and the `uri://gbisd.edu` namespace.
+- **An SEA-scoped credential reaches its LEAs and schools**, which answers
+  the PRD's open question.
 
 ## Architecture Decisions (proposed; please confirm)
 
-1. **Location:** a single `ed-fi-api-v8/compose.yml`, with `ed-fi-api-v8/.env.example` as the only
-   config surface (NFR-USE-3). One file with profiles, rather than many `-f` overlays, keeps
+1. **Location:** a single `ed-fi-api-v8/compose.yml` entry point, which `include:`s the
+   `compose.{core,init,ingress}.yml` fragments, with `ed-fi-api-v8/.env.example` as the only
+   config surface (NFR-USE-3). One entry point, rather than many `-f` overlays, keeps
    "no manual Compose edits" (NFR-USE-2) true. Compose project name is fixed (`name: edfi-pilot`)
    and a project-scoped network replaces the external `dms` network.
 2. **Initialization runs in containers, not in host scripts.** One-shot
    services, gated by `depends_on: condition: service_completed_successfully`,
    do the setup work:
    - OpenIddict key and client seeding
-   - ApiSchema fetch
-   - schema provisioning
-   - data store registration
+   - data store registration and kit claim set import (before DMS)
+   - ApiSchema staging from the DMS image, then schema provisioning (before DMS)
    - template load
    - bootstrap
 
@@ -93,7 +117,8 @@ mounted directory), not analysis.
    network CIDR.
 6. **Pinned artifacts in `.env.example`:**
    - DMS and CMS images, each as tag plus digest (see Decision 3)
-   - ApiSchema package version (`1.0.335`)
+   - the SHA-256 of the DS 5.2 `ApiSchema.json` baked into the DMS image (identical to package
+     `1.0.335`; see decision 10)
    - Data Standard tag (`v5.2.0`)
    - NGINX, PostgreSQL, PGAdmin, and the `dotnet/sdk` base image by digest; SchemaTools and BulkLoadClient by version
 
@@ -109,16 +134,16 @@ mounted directory), not analysis.
    check script diffs the two (FR-EDORG-14).
 9. **Data Warehouse claim set** lives in
    `ed-fi-api-v8/bootstrap/claimsets/DataWarehouse.json`. It is read-only and
-   version-controlled (FR-CLAIM-9). The mechanism for provisioning it (the CMS
-   claim-set import API, or a Hybrid fragment) is decided by the spike in
-   Task 1.
+   version-controlled (FR-CLAIM-9). It is the body of
+   `POST /v3/claimSets/import`, imported before DMS starts (decided by the
+   spike; see decision 8).
 
 ## Task List
 
 Tasks are listed in detail in [todo.md](./todo.md). Summary:
 
 ### Phase 0: De-risk
-- [ ] Task 1: Spike: prove standalone schema provisioning, claim sets, and seed loading
+- [x] Task 1: Spike: prove standalone schema provisioning, claim sets, and seed loading
 
 ### Phase 1: Core stack (no ingress)
 - [ ] Task 2: Compose skeleton and `.env.example` (PostgreSQL, CMS, DMS)
@@ -159,6 +184,7 @@ Tasks are listed in detail in [todo.md](./todo.md). Summary:
 
 ## Parallelization
 
+Tasks 3 and 4 are built and verified together, since DMS can't start with only one of them.
 After Checkpoint A, Tasks 5–7 (ingress) and Tasks 8–11 (data) are independent. Task 18 follows
 Task 11 and needs the NGINX route from Task 5. After Checkpoint C,
 Tasks 13, 14, and 15 can run in parallel. Task 16 can start in outline form anytime, but is finished last.
@@ -169,12 +195,14 @@ Tasks 13, 14, and 15 can run in parallel. Task 16 can start in outline form anyt
 | --- | --- | --- |
 | The SchemaTools version drifts from the DMS image, or the SDK base image is large (roughly 800 MB) | Med | Pin the version to match the DMS image (`8.0.1-alpha.0.164`); Task 1 verifies that it provisions the schema this DMS build expects, and whether a multi-stage build onto the smaller `dotnet/runtime` image works. |
 | DMS has no populated template backup; loading through the API is slow | Med | Measure in Task 1 and Task 9, and document it (FR-TMPL-10). Later option: a `pg_dump` snapshot produced by CI and published per pilot round. |
-| `SISVendor` / `AssessmentVendor` are not embedded in CMS | Med | Verified in Task 1. If missing, record it as a known limitation and escalate. The kit must not invent them (FR-FEAT-9, FR-CLAIM-7). |
-| No CMS mechanism to *add* a claim set declaratively | Med | Task 1 evaluates the CMS `/v3/claimSets` create/import API; Task 11 uses whichever works and is idempotent. |
+| ~~`SISVendor` / `AssessmentVendor` are not embedded in CMS~~ | Closed | The spike found both embedded. |
+| ~~No CMS mechanism to *add* a claim set declaratively~~ | Closed | `POST /v3/claimSets/import` works (Task 11). |
+| An empty `api-schema` volume is filled with core + TPDM by Docker copy-up if DMS mounts it first | High | `init-api-schema` gates DMS, verifies the `ApiSchema.json` hash and a core-only manifest, and restages anything else; DMS mounts with `nocopy` (Task 4). |
 | Swagger UI and DMS generate `localhost:8080` URLs behind a proxy | Med | Forwarded headers and `PathBase` in Task 5; rewrite Swagger UI's spec URLs to be relative in Task 7. |
 | Self-signed certificate friction (PRD-known) | Med | Certificate scripts plus per-ecosystem trust guidance (Task 5, Task 16). |
-| Newly created CMS client returns 401 briefly (cache) | Low | Retry with backoff in the bootstrap and credential scripts. The spike saw no 401 window. |
-| DMS caches claim sets for up to 10 minutes, so a new or changed claim set returns 500 until the cache refreshes (seen in the spike) | Med | Task 18 enables the claim set reload endpoint; bootstrap calls it after provisioning DataWarehouse, and the docs show participants how to call it (FR-CLAIM-14). |
+| Newly created CMS client returns 401 briefly (cache) | Low | The spike saw no 401 window; keep a short retry in the bootstrap and credential scripts. |
+| DMS caches claim sets for up to 10 minutes, so a new or changed claim set returns 500 until the cache refreshes (seen in the spike) | Med | Kit claim sets are imported before DMS starts (Task 11). Task 18 enables the claim set reload endpoint for changes on a running stack, and the docs show participants how to call it (FR-CLAIM-14). |
+| DMS caches Profiles for up to 30 minutes, so a Profile created while DMS runs returns 406 | Low | The kit ships no Profiles; the docs say to restart DMS after creating one (Task 16). |
 | Windows line endings breaking `sh` scripts in containers | Low | `.gitattributes` already forces LF; add a CI lint. |
 
 ## Decisions (answered 2026-09-28)
@@ -214,12 +242,30 @@ Tasks 13, 14, and 15 can run in parallel. Task 16 can start in outline form anyt
    - education organizations
    - people, including students, staff, and contacts
 
-   It is not scoped by education organization: it uses a no-further-authorization-style strategy
-   on Read. It grants no Create, Update, or Delete. Warehouse credentials therefore don't need
+   It is not scoped by education organization: it uses `NoFurtherAuthorizationRequired` on Read
+   and ReadChanges (decision 8). It grants no Create, Update, or Delete. Warehouse credentials therefore don't need
    education organization IDs, so FR-CRED-9 doesn't apply to them.
 7. **Swagger UI:** reuse the copied `custom-swagger-ui` for now. The published Ed-Fi Swagger UI image
    is still being researched and may replace it later.
 
+## Decisions after the spike (answered 2026-09-29)
+
+8. **DataWarehouse includes `ReadChanges`.** It's a separate action from Read, and it gates
+   `/deletes`, `/keyChanges`, and change-query extracts, so "read everything" includes it.
+9. **`.env` is the source of truth for CMS client secrets.** On every start, `init-identity`
+   updates the stored hash of any client whose secret in `.env` changed.
+10. **ApiSchema files come from the pinned DMS image,** not the NuGet package. The image's DS 5.2
+    `ApiSchema.json` is byte-identical to package `1.0.335`, and the image also carries the
+    required `JsonSchemaForApiSchema.json`. This needs no network access or `unzip`, and it always
+    matches the DMS build. It supersedes the "fetch the ApiSchema package" step in Task 4.
+11. **DMS logs at `Warning` by default.** At `Information`, Docker's log rotation discarded the
+    error window of a populated load within minutes. Participants can raise it in `.env`.
+
 ## Remaining Open Questions
 
-- None blocking. Task 1 will surface anything new.
+None blocking. The spike's "Still unknown" list is tracked in the tasks it affects:
+
+- arm64 build of the tools image (Task 17 CI, or a participant report)
+- the browser "Try it out" check in Swagger UI (Task 7)
+- whether `nocopy` on the DMS volume mount prevents copy-up (Task 4)
+- whether the populated load reaches exit 0 with community provider `19255901` (Task 9)
