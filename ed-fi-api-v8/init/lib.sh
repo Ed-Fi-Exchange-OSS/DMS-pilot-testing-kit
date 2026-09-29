@@ -184,10 +184,30 @@ cms_request() {
     rm -f "$_crq_headers_file"
 }
 
+# cms_namespace_prefixes_cover <existing_csv> <required_csv> -> exit 0 if every comma-separated
+# prefix in <required_csv> is present (exact match, ignoring spaces) in <existing_csv>.
+cms_namespace_prefixes_cover() {
+    _cnp_existing=",$(printf '%s' "$1" | tr -d ' '),"
+    _cnp_saved_ifs=$IFS
+    IFS=,
+    for _cnp_prefix in $2; do
+        case "$_cnp_existing" in
+            *",$_cnp_prefix,"*) ;;
+            *)
+                IFS=$_cnp_saved_ifs
+                return 1
+                ;;
+        esac
+    done
+    IFS=$_cnp_saved_ifs
+}
+
 # cms_ensure_vendor <step> <token> <company> <contact_name> <contact_email> <namespace_prefixes>
-# Finds a vendor by company name (GET-then-match: CMS has no upsert for this resource), or creates
-# one and parses its id from the Location header (POST /v3/vendors returns 201 with an empty body --
-# spike-notes Q7). Prints the vendor id on stdout.
+# Finds a vendor by company name (CMS has no upsert), or creates one and parses its id from the
+# Location header (POST /v3/vendors returns 201 with an empty body; spike-notes Q7). A found vendor
+# whose namespacePrefixes don't cover <namespace_prefixes> is deleted and recreated; a failed delete
+# dies, because a too-narrow scope would 403 the whole load. DELETE /v3/vendors is unverified against
+# real CMS. Prints the vendor id on stdout.
 cms_ensure_vendor() {
     _cev_step="$1"
     _cev_token="$2"
@@ -202,10 +222,28 @@ cms_ensure_vendor() {
     fi
     _cev_id=$(jq -r --arg company "$_cev_company" \
         'map(select(.company == $company)) | .[0].id // empty' "$CMS_REQUEST_BODY_FILE")
+    _cev_existing_prefixes=$(jq -r --arg company "$_cev_company" \
+        'map(select(.company == $company)) | .[0].namespacePrefixes // empty' "$CMS_REQUEST_BODY_FILE")
     rm -f "$CMS_REQUEST_BODY_FILE"
+
     if [ -n "$_cev_id" ]; then
-        printf '%s' "$_cev_id"
-        return 0
+        if cms_namespace_prefixes_cover "$_cev_existing_prefixes" "$_cev_namespace_prefixes"; then
+            printf '%s' "$_cev_id"
+            return 0
+        fi
+        log "$_cev_step" \
+            "vendor '$_cev_company' (id=$_cev_id) has namespacePrefixes='$_cev_existing_prefixes'," \
+            "narrower than the required '$_cev_namespace_prefixes' -- deleting and recreating it"
+        cms_request "$_cev_step" DELETE "${CONFIG_BASE_URL}/v3/vendors/${_cev_id}" "$_cev_token"
+        rm -f "$CMS_REQUEST_BODY_FILE"
+        case "$CMS_REQUEST_STATUS" in
+            2??) ;;
+            *)
+                die "$_cev_step" \
+                    "could not delete vendor $_cev_id to widen its namespacePrefixes" \
+                    "(HTTP $CMS_REQUEST_STATUS); remove it manually in CMS and retry"
+                ;;
+        esac
     fi
 
     _cev_body=$(jq -n \
