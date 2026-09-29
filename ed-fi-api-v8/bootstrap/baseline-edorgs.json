@@ -1,0 +1,106 @@
+[
+  {
+    "resource": "stateEducationAgencies",
+    "naturalKey": { "stateEducationAgencyId": 99 },
+    "body": {
+      "stateEducationAgencyId": 99,
+      "nameOfInstitution": "Pilot Kit State Education Agency",
+      "categories": [
+        {
+          "educationOrganizationCategoryDescriptor": "uri://ed-fi.org/EducationOrganizationCategoryDescriptor#State Education Agency"
+        }
+      ]
+    }
+  },
+  {
+    "resource": "localEducationAgencies",
+    "naturalKey": { "localEducationAgencyId": 9900 },
+    "body": {
+      "localEducationAgencyId": 9900,
+      "nameOfInstitution": "Pilot Kit Local Education Agency",
+      "localEducationAgencyCategoryDescriptor": "uri://ed-fi.org/LocalEducationAgencyCategoryDescriptor#Regular public school district",
+      "categories": [
+        {
+          "educationOrganizationCategoryDescriptor": "uri://ed-fi.org/EducationOrganizationCategoryDescriptor#Local Education Agency"
+        }
+      ],
+      "stateEducationAgencyReference": { "stateEducationAgencyId": 99 }
+    }
+  },
+  {
+    "resource": "schools",
+    "naturalKey": { "schoolId": 990001 },
+    "body": {
+      "schoolId": 990001,
+      "nameOfInstitution": "Pilot Kit Elementary School",
+      "educationOrganizationCategories": [
+        {
+          "educationOrganizationCategoryDescriptor": "uri://ed-fi.org/EducationOrganizationCategoryDescriptor#School"
+        }
+      ],
+      "schoolCategories": [
+        {
+          "schoolCategoryDescriptor": "uri://ed-fi.org/SchoolCategoryDescriptor#Elementary School"
+        }
+      ],
+      "gradeLevels": [
+        { "gradeLevelDescriptor": "uri://ed-fi.org/GradeLevelDescriptor#Kindergarten" },
+        { "gradeLevelDescriptor": "uri://ed-fi.org/GradeLevelDescriptor#First grade" },
+        { "gradeLevelDescriptor": "uri://ed-fi.org/GradeLevelDescriptor#Second grade" },
+        { "gradeLevelDescriptor": "uri://ed-fi.org/GradeLevelDescriptor#Third grade" },
+        { "gradeLevelDescriptor": "uri://ed-fi.org/GradeLevelDescriptor#Fourth grade" },
+        { "gradeLevelDescriptor": "uri://ed-fi.org/GradeLevelDescriptor#Fifth grade" }
+      ],
+      "localEducationAgencyReference": { "localEducationAgencyId": 9900 }
+    }
+  },
+  {
+    "resource": "schools",
+    "naturalKey": { "schoolId": 990002 },
+    "body": {
+      "schoolId": 990002,
+      "nameOfInstitution": "Pilot Kit Middle School",
+      "educationOrganizationCategories": [
+        {
+          "educationOrganizationCategoryDescriptor": "uri://ed-fi.org/EducationOrganizationCategoryDescriptor#School"
+        }
+      ],
+      "schoolCategories": [
+        {
+          "schoolCategoryDescriptor": "uri://ed-fi.org/SchoolCategoryDescriptor#Middle School"
+        }
+      ],
+      "gradeLevels": [
+        { "gradeLevelDescriptor": "uri://ed-fi.org/GradeLevelDescriptor#Sixth grade" },
+        { "gradeLevelDescriptor": "uri://ed-fi.org/GradeLevelDescriptor#Seventh grade" },
+        { "gradeLevelDescriptor": "uri://ed-fi.org/GradeLevelDescriptor#Eighth grade" }
+      ],
+      "localEducationAgencyReference": { "localEducationAgencyId": 9900 }
+    }
+  },
+  {
+    "resource": "schools",
+    "naturalKey": { "schoolId": 990003 },
+    "body": {
+      "schoolId": 990003,
+      "nameOfInstitution": "Pilot Kit High School",
+      "educationOrganizationCategories": [
+        {
+          "educationOrganizationCategoryDescriptor": "uri://ed-fi.org/EducationOrganizationCategoryDescriptor#School"
+        }
+      ],
+      "schoolCategories": [
+        {
+          "schoolCategoryDescriptor": "uri://ed-fi.org/SchoolCategoryDescriptor#High School"
+        }
+      ],
+      "gradeLevels": [
+        { "gradeLevelDescriptor": "uri://ed-fi.org/GradeLevelDescriptor#Ninth grade" },
+        { "gradeLevelDescriptor": "uri://ed-fi.org/GradeLevelDescriptor#Tenth grade" },
+        { "gradeLevelDescriptor": "uri://ed-fi.org/GradeLevelDescriptor#Eleventh grade" },
+        { "gradeLevelDescriptor": "uri://ed-fi.org/GradeLevelDescriptor#Twelfth grade" }
+      ],
+      "localEducationAgencyReference": { "localEducationAgencyId": 9900 }
+    }
+  }
+]

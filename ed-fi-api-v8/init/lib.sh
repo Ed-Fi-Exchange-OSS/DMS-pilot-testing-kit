@@ -129,6 +129,33 @@ dms_token() {
     printf '%s' "$_dtk_token"
 }
 
+# dms_token_try <dms_base_url> <key> <secret> -> the access_token on stdout and exit 0, on a 200
+# response with an access_token; exit 1 with nothing on stdout otherwise (including a request that
+# can't be sent). Unlike dms_token, this never dies: a caller uses it to test whether a saved
+# credential still authenticates, where "no" is an expected outcome to branch on (Task 10's
+# bootstrap-credentials.json verification), not a step failure.
+dms_token_try() {
+    _dtt_base_url="$1"
+    _dtt_key="$2"
+    _dtt_secret="$3"
+    _dtt_response_file=$(mktemp "${TMPDIR:-/tmp}/dms-token-try.XXXXXX")
+    if ! _dtt_status=$(kit_curl -o "$_dtt_response_file" -w '%{http_code}' \
+        --request POST "${_dtt_base_url}/oauth/token" \
+        --user "${_dtt_key}:${_dtt_secret}" \
+        --data-urlencode "grant_type=client_credentials"); then
+        rm -f "$_dtt_response_file"
+        return 1
+    fi
+    if [ "$_dtt_status" != "200" ]; then
+        rm -f "$_dtt_response_file"
+        return 1
+    fi
+    _dtt_token=$(jq -r '.access_token // empty' "$_dtt_response_file" 2>/dev/null)
+    rm -f "$_dtt_response_file"
+    [ -n "$_dtt_token" ] || return 1
+    printf '%s' "$_dtt_token"
+}
+
 # cms_request <step> <method> <url> <token> [curl-data-args...]
 # Issues one bearer-authenticated CMS request. Only a request that can't be sent or times out dies
 # here (naming <step>); the caller decides which status codes are acceptable, since that differs by

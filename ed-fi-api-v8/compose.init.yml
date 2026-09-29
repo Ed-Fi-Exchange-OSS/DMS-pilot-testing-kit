@@ -163,3 +163,35 @@ services:
         condition: service_completed_successfully
     restart: "no"
     logging: *logging
+
+  # Creates the bootstrap credential (written to .runtime/bootstrap-credentials.json) and any missing
+  # baseline education organizations. Rerun with `docker compose run --rm init-bootstrap`. Runs as
+  # root to write the bind mount, then gives the file to the owner of .runtime/ (tracked in git, so
+  # it's the host user). See init/bootstrap.sh.
+  init-bootstrap:
+    <<: *tools-image
+    command: ["sh", "/init/bootstrap.sh"]
+    user: "0:0"
+    environment:
+      CMS_ADMIN_CLIENT_SECRET: ${CMS_ADMIN_CLIENT_SECRET:?CMS_ADMIN_CLIENT_SECRET must be set in .env}
+      # Direct, without the NGINX path base; the spike confirmed /connect/token answers here.
+      CONFIG_BASE_URL: http://config:8081
+      # Direct, without the NGINX path base; matches DMS_PATH_BASE so the two never drift apart.
+      DMS_BASE_URL: http://dms:8080/${DMS_PATH_BASE:-api}
+      # Public-facing values baked into bootstrap-credentials.json, so the file is usable outside the
+      # Compose network exactly as written.
+      PUBLIC_ORIGIN: ${PUBLIC_ORIGIN:-https://localhost}
+      DMS_PATH_BASE: ${DMS_PATH_BASE:-api}
+      BOOTSTRAP_DIR: /bootstrap
+      RUNTIME_DIR: /runtime
+    volumes:
+      - ./init:/init:ro
+      - ./bootstrap:/bootstrap:ro
+      - ./.runtime:/runtime
+    depends_on:
+      dms:
+        condition: service_healthy
+      init-template:
+        condition: service_completed_successfully
+    restart: "no"
+    logging: *logging
