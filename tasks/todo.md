@@ -23,7 +23,10 @@ The sandbox still has no Docker daemon, so new work is drafted here and verified
   warning, DataWarehouse import with no warnings). DataWarehouse credential checks wait for Task 13.
 - Task 10: done and verified on the host (5 baseline records, credentials file readable by the host
   user, rerun reuses the credential and creates nothing, a deleted school is recreated).
-- Next: Task 9 (populated template) and Task 18 (claim set reload endpoint), then Phase 4.
+- Task 9: done and verified on the host. A clean populated `up` took about 200 s in total (the
+  spike measured 8 minutes), the load exited 0 with community provider 19255901 included, and a
+  rerun skips.
+- Next: Task 18 (claim set reload endpoint), then Phase 4.
 
 ---
 
@@ -312,9 +315,10 @@ From the spike (Q9):
   194 MB, and the `db-data` volume to about 700 MB.
 
 **Acceptance criteria:**
-- [ ] Clean start with `populated` → students and the sample education organizations are present
+- [x] Clean start with `populated` → students and the sample education organizations are present
 - [ ] A corrupted or missing archive fails startup with a message naming the file and the fix; no silent fallback
-- [ ] Measured load time and volume size are recorded for docs (FR-TMPL-10, NFR-PORT-5)
+- [ ] Measured load time and volume size are recorded for docs (FR-TMPL-10, NFR-PORT-5). Load time:
+      about 200 s for a clean populated `up` on the host; volume size not yet re-measured
 
 **Verification:**
 - [ ] `GET /api/data/ed-fi/students?totalCount=true` shows the expected count
