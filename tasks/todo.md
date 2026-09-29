@@ -6,20 +6,19 @@ the repository root; new work lives in `ed-fi-api-v8/`.
 Common verification command (defined in Task 12, used informally before then):
 `docker compose -f ed-fi-api-v8/compose.yml --env-file ed-fi-api-v8/.env up -d --wait`
 
-## Status (2026-09-28)
+## Status (2026-09-29)
 
-Docker isn't available in the sandbox yet, so the following files were drafted and checked without a
-Docker daemon. They are uncommitted and still need a real `docker compose up` run.
+The Phase 0 spike ran on a host with Docker; its results are in [spike-notes.md](./spike-notes.md).
+The sandbox still has no Docker daemon, so new work is drafted here and verified on the host.
 
-- Task 1 (partial): SchemaTools and BulkLoadClient findings are in `ed-fi-api-v8/tools/README.md`
-- Task 4 (partial): `ed-fi-api-v8/tools/Dockerfile`
-- Tasks 5, 6, 15 (NGINX parts): `ed-fi-api-v8/nginx/`, `ed-fi-api-v8/ssl/`
-- Task 7: `ed-fi-api-v8/swagger-ui/`, `ed-fi-api-v8/pgadmin/`
-- Task 2 (static checks only): `compose.yml` plus `compose.{core,init,ingress}.yml`, `.env.example`,
-  `.gitignore`. `docker compose config` passes, and every pinned image digest exists in its registry.
-  Still to verify: `up -d db config` reaching healthy.
-
-The ingress, Swagger UI, PGAdmin, and tools entries from the READMEs are now wired into the compose files.
+- Task 1: done. Every question is answered or listed under "Still unknown" in the notes.
+- Task 2: verified by the spike (`db` and `config` reach healthy on clean volumes).
+- Tasks 5, 6, 7, 15 (NGINX parts): spot-checked by the spike (spike-notes Q10). The Swagger UI
+  empty-page bug it found is fixed; the browser "Try it out" check is still open.
+- Tools image: the spike's three defects (log4net path, no `unzip`, unwritable `api-schema` volume)
+  are fixed in `tools/Dockerfile`, pending a host rebuild.
+- Next: Tasks 3 and 4, built and verified together as one startup chain (DMS can't start without
+  both), then Checkpoint A on the host.
 
 ---
 
@@ -40,12 +39,12 @@ The ingress, Swagger UI, PGAdmin, and tools entries from the READMEs are now wir
 Throwaway code is fine. The deliverable is the notes file.
 
 **Acceptance criteria:**
-- [ ] `tasks/spike-notes.md` records each answer with the command or endpoint used as evidence
-- [ ] A working, pinned container recipe for `EdFi.Api.SchemaTools` that provisions a schema DMS accepts
-- [ ] Measured wall time and DB size for the minimal and populated loads
+- [x] `tasks/spike-notes.md` records each answer with the command or endpoint used as evidence
+- [x] A working, pinned container recipe for `EdFi.Api.SchemaTools` that provisions a schema DMS accepts
+- [x] Measured wall time and DB size for the minimal and populated loads
 
 **Verification:**
-- [ ] Manual check: a hand-run stack returns 200 for an authenticated `GET /api/data/ed-fi/schools`
+- [x] Manual check: a hand-run stack returns 200 for an authenticated `GET /api/data/ed-fi/schools`
 
 **Dependencies:** None
 **Files likely touched:** `tasks/spike-notes.md` (and a draft of `ed-fi-api-v8/tools/Dockerfile`, which Task 4 finishes)
@@ -71,7 +70,7 @@ health checks, and `127.0.0.1` bindings. Create a commented `.env.example` with 
 - [ ] License headers on all files (NFR-MAINT-4); `.gitignore` covers `.env`, `.runtime/`, `logs/`, `ssl/*.key`
 
 **Verification:**
-- [ ] `docker compose up -d db config` → both healthy
+- [x] `docker compose up -d db config` → both healthy (spike, clean run 2)
 
 **Dependencies:** Task 1
 **Files likely touched:** `ed-fi-api-v8/compose.yml`, `ed-fi-api-v8/.env.example`, `.gitignore`
@@ -79,44 +78,100 @@ health checks, and `127.0.0.1` bindings. Create a commented `.env.example` with 
 
 ## Task 3: Identity init container
 
-**Description:** A one-shot `init-identity` service. Before CMS starts, it creates `dmscs.OpenIddictKey`
-with a locally generated RSA key. After CMS is healthy, it inserts the `DmsConfigurationService`,
-`CMSReadOnlyAccess`, and admin clients. Re-runs are idempotent. Port the SQL from `setup-openiddict.ps1`
-to `sh`.
+**Description:** A one-shot `init-identity` service (tools image) that runs after CMS is healthy.
+CMS's own database deploy creates the `dmscs` tables and the `pgcrypto` extension, and CMS reads the
+signing key lazily on the first token request, so no pre-CMS step or restart is needed (spike Q2).
+The spike's working recipe is in spike-notes Q2; port it to `sh` with `openssl` and `psql`, no .NET.
+
+1. **Signing key**, if no active row exists in `dmscs."OpenIddictKey"`. Generate RSA 2048 as
+   **PKCS#8** DER (`openssl genpkey … | openssl pkcs8 -topk8 -nocrypt -outform DER`; plain
+   `genpkey -outform DER` writes PKCS#1 and CMS returns 500 on every token request). Store the SPKI
+   public key and `pgp_sym_encrypt(private, CMS_IDENTITY_ENCRYPTION_KEY)`. Check table existence and
+   row existence as two queries (a combined `to_regclass … AND EXISTS` fails to plan when the table
+   is absent).
+2. **Clients**, each with both the `dms-client` and `cms-client` roles and a `namespacePrefixes`
+   protocol mapper, as upstream `setup-openiddict.ps1` does:
+
+   | Client | Secret (`.env`) | Scope |
+   | --- | --- | --- |
+   | `DmsConfigurationService` | `CMS_SERVICE_CLIENT_SECRET` | `edfi_admin_api/full_access` |
+   | `CMSReadOnlyAccess` | `CMS_READONLY_CLIENT_SECRET` | `edfi_admin_api/readonly_access` |
+   | `PilotKitAdmin` | `CMS_ADMIN_CLIENT_SECRET` | `edfi_admin_api/full_access` |
+
+3. **Secret hash:** ASP.NET Identity v3 format (`0x01`, int32 LE 16, 16-byte salt, PBKDF2-HMAC-SHA256
+   with 210000 iterations and 32 bytes, base64), computed with `openssl kdf`. The iteration count
+   must match `IdentitySettings__HashingIterations`.
+4. **Reconcile secrets on every run** (decision 9 in plan.md): for an existing client, re-derive the
+   hash from `.env` with the stored salt; if it differs, update `ClientSecret`. Otherwise change
+   nothing.
+5. Validate each secret before touching the database (32–128 characters; lowercase, uppercase,
+   digit, special), and fail with a message that names the `.env` variable.
+
+Pass values to SQL as psql variables (`-v name=value`, `:'name'`), never by string concatenation.
 
 **Acceptance criteria:**
-- [ ] Clean start: CMS `/connect/token` issues an admin token
-- [ ] Second `up` makes no new key or client rows and exits 0
-- [ ] Secrets come from `.env`, never hard-coded
+- [ ] Clean start: CMS `/connect/token` issues a `PilotKitAdmin` token, and DMS logs no 401 from CMS
+- [ ] Second `up` makes no new key or client rows, and exits 0
+- [ ] Changing a client secret in `.env` and running `up` again updates only that client; the old
+      secret stops working and the new one works
+- [ ] An invalid secret in `.env` fails `init-identity` with a message naming the variable
+- [ ] Secrets come from `.env`, never hard-coded, and never appear in logs
 
 **Verification:**
 - [ ] `docker compose up --wait` twice; `SELECT count(*)` from the key and application tables is unchanged
 
 **Dependencies:** Task 2
-**Files likely touched:** `ed-fi-api-v8/compose.yml`, `ed-fi-api-v8/init/identity.sh`, `ed-fi-api-v8/init/lib.sh`
+**Files likely touched:** `ed-fi-api-v8/compose.init.yml`, `ed-fi-api-v8/init/identity.sh`, `ed-fi-api-v8/init/lib.sh`
 **Estimated scope:** M
 
 ## Task 4: Schema and data store init
 
-**Description:** One-shot services that:
+**Description:** Three one-shot services, run before DMS. DMS exits in a restart loop without a
+registered data store or without its ApiSchema files (spike Q3, Q4), so it `depends_on` all of them
+with `service_completed_successfully`, and on `init-identity`.
 
-1. fetch the pinned DS 5.2 ApiSchema package into a shared volume
-2. register the single data store in CMS if absent
-3. run `EdFi.Api.SchemaTools` (`ddl provision`) if `dms.EffectiveSchema` is absent
+1. **`init-api-schema`** stages the ApiSchema volume from the pinned DMS image (decision 10 in
+   plan.md), not from the NuGet package. `image: ${DMS_IMAGE}`, `entrypoint: sh`, running as root
+   (a new volume is root-owned), with the `api-schema` volume mounted at `/stage` (not
+   `/app/ApiSchema`, which would trigger Docker's copy-up). It copies `JsonSchemaForApiSchema.json`
+   and `Packages/EdFi.DataStandard52.ApiSchema/` (`ApiSchema.json`, `discovery-spec.json`, `xsd/`)
+   from the image's `/app/ApiSchema`, and writes a core-only `bootstrap-api-schema-manifest.json`
+   with `jq` (layout in spike-notes Q3). All four files are required.
+   - Verify `ApiSchema.json` against a pin in `.env`:
+     `API_SCHEMA_SHA256=1051c5c3d1b2a3e488460a08a82f65a22fc49802b361df66dff8195b5aac5e73`
+     (byte-identical to `EdFi.DataStandard52.ApiSchema` 1.0.335).
+   - Fail if the manifest lists any project other than `ed-fi`.
+   - Idempotency: if the volume already holds exactly the expected files and hash, change nothing.
+     Otherwise (empty, TPDM from an earlier copy-up, or a different hash), clear it and restage.
+2. **`init-datastore`** (tools image, after `init-identity`) registers the data store with a
+   `PilotKitAdmin` token, if `GET /v3/dataStores` has no entry with the kit's name:
+   `POST /v3/dataStores {"name":"Pilot Kit","dataStoreType":"Development","provider":"postgresql","connectionString":"host=db;…;Maximum Pool Size=${DMS_DB_MAX_POOL_SIZE}"}`.
+   `provider` must be lowercase. No data store context is needed.
+3. **`init-schema`** (tools image, after `init-api-schema`, as `postgres`) runs
+   `api-schema-tools ddl provision --schema <volume>/Packages/EdFi.DataStandard52.ApiSchema/ApiSchema.json --connection-string … --dialect pgsql --create-database`.
+   Skip when `dms."EffectiveSchema"` already holds the expected hash (`api-schema-tools hash`); fail
+   with a clear message when it holds a different hash, since that requires a reset.
 
-DMS mounts the ApiSchema volume (`USE_API_SCHEMA_PATH=true`,
-`SCHEMA_PACKAGES=[]`) and depends on all three completing.
+Also:
+
+- Mount the volume in DMS with `volume: {nocopy: true}` as a second guard against copy-up
+  (untested; confirm on the host).
+- The admin-token and "GET before POST" helpers go in `init/lib.sh`, shared with Tasks 8–13.
+- Imports of kit claim sets (Task 11) also belong in this pre-DMS chain, since they only need CMS.
 
 **Acceptance criteria:**
-- [ ] Clean `up --wait` → DMS healthy; `GET /api` Discovery returns 200 with DS 5.2
-- [ ] Re-run doesn't re-register the data store or re-provision
+- [ ] Clean `up --wait` → DMS healthy; `GET /api` Discovery returns 200 with DS 5.2 and no TPDM
+- [ ] `dms."EffectiveSchema"` hash is `a0d39468ef30d3e99273065256bfffa42b799404ca5fbc09a8648f349d9217e1`
+- [ ] Re-run doesn't re-register the data store, restage the volume, or re-provision
+- [ ] A volume pre-filled with TPDM (from copy-up) is detected and restaged as core only
 - [ ] Failure of any init step makes `up --wait` fail and names the service
+- [ ] `GET /api/metadata/xsd/ed-fi/files` and `/api/metadata/specifications/discovery-spec.json` return 200
 
 **Verification:**
 - [ ] Manual: create a vendor and application via CMS by hand, get a token, and `GET` a descriptor list → 200
 
 **Dependencies:** Task 3
-**Files likely touched:** `ed-fi-api-v8/tools/Dockerfile`, `ed-fi-api-v8/compose.yml`, `ed-fi-api-v8/init/api-schema.sh`, `ed-fi-api-v8/init/datastore.sh`, `ed-fi-api-v8/init/provision-schema.sh`
+**Files likely touched:** `ed-fi-api-v8/compose.core.yml`, `ed-fi-api-v8/compose.init.yml`, `ed-fi-api-v8/.env.example`, `ed-fi-api-v8/init/api-schema.sh`, `ed-fi-api-v8/init/datastore.sh`, `ed-fi-api-v8/init/provision-schema.sh`
 **Estimated scope:** M
 
 ### Checkpoint A
@@ -141,7 +196,8 @@ DMS/CMS `PathBase` and forwarded-header trust. Make host ports configurable.
 
 **Acceptance criteria:**
 - [ ] `curl -k https://localhost/api` Discovery shows `https://localhost/...` URLs (FR-ROUTE-4)
-- [ ] `http://` → 301 to https; stopping DMS returns 503, not 502 (FR-ROUTE-9)
+- [ ] `http://` → 301 to https; stopping DMS returns 503, not 502 (FR-ROUTE-9). Both seen in the
+      spike (Q10); recheck after Checkpoint A
 - [ ] Missing certificate files → nginx fails with an actionable message, and the cert script fixes it
 
 **Verification:**
@@ -175,6 +231,10 @@ edits (FR-ROUTE-5/6/8).
 instead of `localhost:${DMS_HTTP_PORTS}`. Add PGAdmin at `/pgadmin`
 (`SCRIPT_NAME=/pgadmin`), with a preconfigured `servers.json` for the kit database (NFR-OBS-2).
 
+The spike found `/swagger/` served an empty `index.html` (a YAML folded-scalar bug in the
+`command:`); that is fixed. `index.html` loads `swagger-ui-dist` from unpkg.com, so the browser needs
+internet access: record it as a known limitation, or vendor the files.
+
 **Acceptance criteria:**
 - [ ] `/swagger` loads the Resources and Descriptors specs and "Try it out" succeeds with a token (FR-FEAT-3)
 - [ ] `/pgadmin` shows the preconfigured server
@@ -189,7 +249,8 @@ instead of `localhost:${DMS_HTTP_PORTS}`. Add PGAdmin at `/pgadmin`
 
 ### Checkpoint B
 - [ ] All participant URLs work over HTTPS; the PRD feature list in 3.4 is spot-checked (change queries, ETag, paging, Profiles)
-- [ ] Any feature that can't be enabled is written down for the known-limitations doc (FR-FEAT-9b)
+- [ ] Any feature that can't be enabled is written down for the known-limitations doc (FR-FEAT-9b).
+      The spike found every 3.4 feature on by default, with no flags (spike-notes Q8).
 
 ---
 
@@ -202,6 +263,18 @@ runtime container. It loads the pinned DS v5.2.0 `Descriptors/` XML (plus School
 using a SeedLoader credential created through CMS. `DATABASE_TEMPLATE=minimal|populated` in `.env`
 selects the template. A marker table records the template and completion. If the marker exists, the
 service skips; if the marker disagrees with `.env`, it warns (FR-TMPL-4/5).
+
+From the spike (Q9):
+
+- Source: `https://github.com/Ed-Fi-Alliance-OSS/Ed-Fi-Data-Standard/archive/refs/tags/v5.2.0.zip`
+  (`Ed-Fi-Standard` only redirects). GitHub archive zips aren't guaranteed byte-stable, so verify
+  the extracted content rather than relying only on the zip's SHA-256.
+- Before BulkLoadClient, POST SchoolYearType 1991–2037 through REST (upsert; re-POST returns 200).
+- The SeedLoader vendor needs `namespacePrefixes` `uri://ed-fi.org`. SeedLoader has no Read, so
+  verification reads need another credential.
+- `bulkloadclient -b http://dms:8080/api -o http://dms:8080/api/oauth/token -d …/Descriptors -w <dir under /work> -x …/Schemas/Bulk -c 10 -l 10 -t 5 -r 2`.
+  Minimal took 17 s (3,303 descriptors) on the spike host.
+- Fail on a non-zero BulkLoadClient exit.
 
 **Acceptance criteria:**
 - [ ] Clean start with the default → descriptor endpoints are populated; no education organizations exist
@@ -220,6 +293,18 @@ service skips; if the marker disagrees with `.env`, it warns (FR-TMPL-4/5).
 **Description:** Extend the loader to add `Samples/Sample XML` when `DATABASE_TEMPLATE=populated`.
 Fail with an actionable message if the source archive is missing, unreadable, or its checksum doesn't
 match (FR-TMPL-7). Record the measured time and disk cost.
+
+From the spike (Q9):
+
+- Stage each sample file under `<InterchangeName>/` by its root `<Interchange…>` element, because
+  BulkLoadClient only matches `Name.xml`, `Name-*.xml`, or `Name/*.xml`. The 8 sample descriptor
+  files join the descriptor tier (the sample copy wins for `DiagnosisDescriptor.xml`).
+- The SeedLoader application needs `namespacePrefixes` `uri://ed-fi.org,uri://gbisd.edu` and
+  `educationOrganizationIds` `255901, 255950, 6000203, 19255901` (LEA, ESC, post-secondary
+  institution, community provider). Without them 96% of records returned 403. With the first three,
+  3 records still failed on `CommunityProviderId`; confirm that adding `19255901` reaches exit 0.
+- Measured: about 5.3 min of loading and 8 min for the whole clean stack; the database grows to
+  194 MB, and the `db-data` volume to about 700 MB.
 
 **Acceptance criteria:**
 - [ ] Clean start with `populated` → students and the sample education organizations are present
@@ -247,6 +332,11 @@ match (FR-TMPL-7). Record the measured time and disk cost.
 
 Each step's failure names the step (FR-BOOT-9).
 
+Parse CMS IDs from the `Location` header: `POST /v3/vendors` returns 201 with an empty body. The
+spike created all five baseline records with EdFiSandbox on both templates. Note for the docs:
+EdFiSandbox reads `people` through `RelationshipsWithEdOrgsAndPeople`, so the bootstrap credential
+can't read arbitrary students.
+
 **Acceptance criteria:**
 - [ ] Clean minimal start → 5 education organizations exist; credentials file written with IDs
 - [ ] Re-run → no duplicate vendor, application, or education organizations; missing records are recreated (FR-BOOT-4/5)
@@ -263,19 +353,36 @@ Each step's failure names the step (FR-BOOT-9).
 
 **Description:** Add `bootstrap/claimsets/DataWarehouse.json`, with Read on literally everything: all resources,
 descriptors, education organizations, and people. Read is not scoped by education organization
-(no-further-authorization-style), and the set grants no Create, Update, or Delete. Provision it idempotently during bootstrap, using the mechanism chosen in Task 1.
-Leave the standard claim sets untouched (FR-CLAIM-5..9).
+(no-further-authorization-style), and the set grants no Create, Update, or Delete. Leave the
+standard claim sets untouched (FR-CLAIM-5..9).
+
+From the spike (Q6) and decision 8 in plan.md:
+
+- The file is the body of `POST /v3/claimSets/import`: `{claimSetName, resourceClaims[]}`, the shape
+  `GET /v3/claimSets/{id}/export` returns. `POST /v3/claimSets` creates only an empty set, and a
+  Hybrid claims fragment can't define a new claim set name.
+- Grant `Read` and `ReadChanges`, both with `NoFurtherAuthorizationRequired`, on the 14 roots of
+  the claims hierarchy listed in spike-notes Q6 (all but `services/identity` and `domains/tpdm`).
+  `ReadChanges` gates `/deletes`, `/keyChanges`, and change-query extracts.
+- Import it in the pre-DMS init chain (`init-claimsets`, after `init-identity`), after a
+  `GET /v3/claimSets` name check. A claim set imported while DMS runs returns HTTP 500 `No security
+  metadata has been configured for this resource` until DMS's cache refreshes (up to 10 minutes);
+  Task 18 covers imports on a running stack.
 
 **Acceptance criteria:**
-- [ ] `GET /config/v3/claimSets` lists `DataWarehouse`; its authorization metadata shows Read only
-- [ ] A DataWarehouse credential with no education organization IDs can GET every resource, including students outside the baseline organizations on the populated template; POST, PUT, and DELETE return 403
+- [ ] `GET /config/v3/claimSets` lists `DataWarehouse`; its authorization metadata shows only Read
+      and ReadChanges
+- [ ] A DataWarehouse credential with no education organization IDs can GET every resource and its
+      `/deletes`, including students outside the baseline organizations on the populated template;
+      POST, PUT, and DELETE return 403
+- [ ] The first request with a new DataWarehouse credential after a clean start returns 200, not 500
 - [ ] Standard claim sets are byte-identical before and after (export diff)
 
 **Verification:**
 - [ ] Scripted check in the smoke test (Task 14)
 
-**Dependencies:** Task 10
-**Files likely touched:** `ed-fi-api-v8/bootstrap/claimsets/DataWarehouse.json`, `ed-fi-api-v8/init/bootstrap.sh`
+**Dependencies:** Task 4 (the pre-DMS chain)
+**Files likely touched:** `ed-fi-api-v8/bootstrap/claimsets/DataWarehouse.json`, `ed-fi-api-v8/init/claimsets.sh`, `ed-fi-api-v8/compose.init.yml`
 **Estimated scope:** S
 
 ## Task 18: Enable the DMS claim set reload endpoint
@@ -298,8 +405,10 @@ so that both bootstrap and participants can apply claim set changes immediately 
    integration credential.
 3. Decide which credential calls it (the `PilotKitAdmin` CMS client, or the bootstrap credential), and
    give that client the role through the identity init (Task 3).
-4. After the DataWarehouse import (Task 11), have bootstrap call the endpoint so that the claim set is
-   usable before startup reports success. This removes the up-to-10-minute window.
+4. On a clean start, Task 11 imports DataWarehouse before DMS starts, so no reload is needed. When
+   `bootstrap` imports or changes a claim set while DMS is already running, have it call the
+   endpoint so that the claim set is usable before it reports success. This removes the
+   up-to-10-minute window.
 5. Confirm that NGINX routes the endpoint under `/api` and applies no rate limit or rewrite to it.
 6. Supply the request, and the credential it needs, to the participant docs (Task 16) and a `.http`
    example (Task 14).
@@ -309,7 +418,8 @@ so that both bootstrap and participants can apply claim set changes immediately 
       credential with that claim set succeed immediately, with no 500 and no restart
 - [ ] The endpoint rejects a participant integration credential (401 or 403) and an anonymous request
 - [ ] With the `.env` switch off, the endpoint isn't available (404), and the rest of the stack is unchanged
-- [ ] Bootstrap calls the endpoint after provisioning DataWarehouse, and a failure names the step (FR-BOOT-9)
+- [ ] Bootstrap on a running stack calls the endpoint after changing a claim set, and a failure
+      names the step (FR-BOOT-9)
 
 **Verification:**
 - [ ] Manual: import a throwaway claim set, reload, then GET with a credential that uses it → 200 at once
@@ -342,6 +452,9 @@ parameters. Each is a thin wrapper around `docker compose`.
 `reset` requires `--force` or interactive confirmation, and removes volumes. `bootstrap` re-runs
 `init-bootstrap` (FR-BOOT-10).
 
+The `.sh` wrappers `export MSYS_NO_PATHCONV=1`: Git Bash on Windows otherwise rewrites container
+paths such as `/app/...` into Windows paths (spike Q1).
+
 **Acceptance criteria:**
 - [ ] Same flags and same output on bash and pwsh (tested on Linux; pwsh also tested on Windows)
 - [ ] `start` against a running stack exits 0, with no changes
@@ -363,9 +476,10 @@ parameters. Each is a thin wrapper around `docker compose`.
 | `--shape sis\|assessment\|warehouse` | Required. Maps to `SISVendor`, `AssessmentVendor`, or `DataWarehouse`. |
 | `--claim-set` | Optional override; unknown values are rejected. |
 | `--name` | Required, and must be unique. |
-| `--edorg-ids` | Optional. Defaults to the baseline education organizations (`99`, `9900`, `990001`–`990003`) on minimal, or the sample LEA and schools on populated. Warehouse credentials don't need it. |
+| `--edorg-ids` | Optional. Defaults to the SEA `99` on minimal, or the sample LEA `255901` on populated; the spike showed an SEA-scoped credential reaches its LEA and schools (Q7). Warehouse credentials default to none. |
 
-The script uses the bootstrap admin client against CMS. It prints and saves the key and secret to
+The script uses the `PilotKitAdmin` CMS client, and reads the new vendor's ID from the `Location`
+header. It prints and saves the key and secret to
 `.runtime/credentials/<name>.json`, and warns that they can't be recovered. It fails clearly when CMS
 isn't ready (FR-CRED-1..10). The logic could live in the tool container, as
 `docker compose run --rm tools new-credential`.
@@ -394,6 +508,9 @@ isn't ready (FR-CRED-1..10). The logic could live in the tool container, as
 - a scripted `smoke-test.{sh,ps1}` that runs the same path non-interactively,
   plus a consistency check that `edorgs.http` IDs match `baseline-edorgs.json`
 
+Cursor paging needs a first token from a `limit=` response's `Next-Page-Token` header or from
+`GET /data/ed-fi/{resource}/partitions`; `pageSize` alone returns 400 (spike Q8).
+
 **Acceptance criteria:**
 - [ ] `smoke-test` exits 0 on a fresh minimal start and a fresh populated start; non-zero when DMS is stopped
 - [ ] `edorgs.http` re-run against a bootstrapped environment → no errors, no duplicates
@@ -419,7 +536,9 @@ isn't ready (FR-CRED-1..10). The logic could live in the tool container, as
 
 - NGINX `log_format` as JSON, including request time, upstream time, status,
   path and query, correlation ID, and response size, written to `${LOG_DIR:-./logs}`
-- DMS and CMS log levels from `.env`, with the correlation ID header enabled
+- DMS and CMS log levels from `.env`, with the correlation ID header enabled. DMS defaults to
+  `Warning` (decision 11 in plan.md): at `Information`, Docker's log rotation discarded the error
+  window of a populated load within minutes
 - DMS/CMS file logs mounted into the same directory if the image supports it;
   otherwise document that they go through `docker logs` (FR-LOG-1..7, NFR-OBS-1)
 
@@ -448,6 +567,9 @@ isn't ready (FR-CRED-1..10). The logic could live in the tool container, as
 - the DataWarehouse claim set as a kit addition, with a feedback ask
 - how to POST to the claim set reload endpoint to apply claim set changes immediately (FR-CLAIM-14, Task 18)
 - the `/data/v3` caveat
+- spike findings that need a sentence each: pgAdmin prompts for the database password; a Profile
+  created while DMS runs isn't usable until DMS restarts (or up to 30 minutes); a school-scoped SIS
+  credential still reads all schools; Swagger UI needs internet access (unpkg.com)
 - the contents of the populated template
 - what the logs capture
 - privacy guidance
