@@ -102,7 +102,17 @@ services:
       AppSettings__CorrelationIdHeader: correlationid
       AppSettings__CorrelationIdMaxLength: "255"
       AppSettings__MaskRequestBodyInLogs: ${MASK_REQUEST_BODY_IN_LOGS:-true}
-      AppSettings__EnableManagementEndpoints: "false"
+      # Task 18 (FR-CLAIM-14): POST /${DMS_PATH_BASE}/management/reload-claimsets forces DMS to drop
+      # its up-to-10-minute claim-set cache (ClaimSetsCacheExpirationSeconds); GET .../view-claimsets
+      # is mapped alongside it -- DMS gates both behind the same EnableManagementEndpoints switch, so
+      # there is no way to enable one without the other. Both return 401/403 to any bearer that lacks
+      # the exact role below; false unmaps the routes entirely (HTTP 404).
+      AppSettings__EnableManagementEndpoints: ${DMS_CLAIMSET_RELOAD_ENABLED:-true}
+      AppSettings__EnableClaimsetReload: ${DMS_CLAIMSET_RELOAD_ENABLED:-true}
+      # The one role a bearer token must carry (under JwtAuthentication__RoleClaimType below) to call
+      # the endpoints above. Only PilotKitAdmin is granted it (init/identity.sh); a participant
+      # integration credential only ever gets JwtAuthentication__ClientRole (dms-client).
+      AppSettings__ManagementEndpoints__RequiredRole: ${DMS_CLAIMSET_RELOAD_ROLE:-dms-management-operator}
       # The ApiSchema files are staged into the api-schema volume by init-api-schema, so DMS never
       # downloads packages at startup.
       AppSettings__UseApiSchemaPath: "true"

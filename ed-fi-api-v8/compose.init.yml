@@ -50,6 +50,8 @@ services:
       CMS_IDENTITY_ENCRYPTION_KEY: ${CMS_IDENTITY_ENCRYPTION_KEY:?CMS_IDENTITY_ENCRYPTION_KEY must be set in .env}
       # Must equal IdentitySettings__HashingIterations in compose.core.yml.
       HASH_ITERATIONS: "210000"
+      # Must equal AppSettings__ManagementEndpoints__RequiredRole in compose.core.yml (Task 18).
+      DMS_CLAIMSET_RELOAD_ROLE: ${DMS_CLAIMSET_RELOAD_ROLE:-dms-management-operator}
       # Direct, without the NGINX path base; the spike confirmed /connect/token answers here.
       CONFIG_BASE_URL: http://config:8081
     volumes:
@@ -125,6 +127,12 @@ services:
       # Direct, without the NGINX path base; the spike confirmed /connect/token answers here.
       CONFIG_BASE_URL: http://config:8081
       CLAIMSETS_DIR: /claimsets
+      # Task 18 (FR-CLAIM-14): after re-importing a changed claim set, call DMS's reload endpoint so
+      # it is usable immediately on a stack where DMS is already running. Direct URLs, without the
+      # NGINX path base; DMS_BASE_URL matches DMS_PATH_BASE so the two never drift apart.
+      DMS_CLAIMSET_RELOAD_ENABLED: ${DMS_CLAIMSET_RELOAD_ENABLED:-true}
+      DMS_BASE_URL: http://dms:8080/${DMS_PATH_BASE:-api}
+      DMS_HEALTH_URL: http://dms:8080/health
     volumes:
       - ./init:/init:ro
       - ./bootstrap/claimsets:/claimsets:ro

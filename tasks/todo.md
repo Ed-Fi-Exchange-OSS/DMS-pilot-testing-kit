@@ -26,7 +26,10 @@ The sandbox still has no Docker daemon, so new work is drafted here and verified
 - Task 9: done and verified on the host. A clean populated `up` took about 200 s in total (the
   spike measured 8 minutes), the load exited 0 with community provider 19255901 included, and a
   rerun skips.
-- Next: Task 18 (claim set reload endpoint), then Phase 4.
+- Task 18: done and verified on the host (reload returns 200, a new claim set imported on a running
+  stack is reloaded at once, bootstrap token → 403, anonymous → 401, switch off → 404).
+  `http/claimset-test.http` exercises the endpoint.
+- Next: Checkpoint C, then Phase 4 (Tasks 12–14).
 
 ---
 
@@ -423,10 +426,10 @@ so that both bootstrap and participants can apply claim set changes immediately 
    example (Task 14).
 
 **Acceptance criteria:**
-- [ ] With DMS running, importing a new claim set and then POSTing to the reload endpoint makes a
+- [x] With DMS running, importing a new claim set and then POSTing to the reload endpoint makes a
       credential with that claim set succeed immediately, with no 500 and no restart
-- [ ] The endpoint rejects a participant integration credential (401 or 403) and an anonymous request
-- [ ] With the `.env` switch off, the endpoint isn't available (404), and the rest of the stack is unchanged
+- [x] The endpoint rejects a participant integration credential (401 or 403) and an anonymous request
+- [x] With the `.env` switch off, the endpoint isn't available (404), and the rest of the stack is unchanged
 - [ ] Bootstrap on a running stack calls the endpoint after changing a claim set, and a failure
       names the step (FR-BOOT-9)
 
