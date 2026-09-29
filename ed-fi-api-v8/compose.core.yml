@@ -103,8 +103,8 @@ services:
       AppSettings__CorrelationIdMaxLength: "255"
       AppSettings__MaskRequestBodyInLogs: ${MASK_REQUEST_BODY_IN_LOGS:-true}
       AppSettings__EnableManagementEndpoints: "false"
-      # The ApiSchema files are staged into the api-schema volume by an init service (Task 4), so DMS
-      # never downloads packages at startup.
+      # The ApiSchema files are staged into the api-schema volume by init-api-schema, so DMS never
+      # downloads packages at startup.
       AppSettings__UseApiSchemaPath: "true"
       AppSettings__ApiSchemaPath: /app/ApiSchema
       SCHEMA_PACKAGES: "[]"
@@ -133,12 +133,22 @@ services:
       Cors__SwaggerUIOrigin: ${PUBLIC_ORIGIN:-https://localhost}
       Serilog__MinimumLevel__Default: ${DMS_LOG_LEVEL:-Warning}
     volumes:
-      - api-schema:/app/ApiSchema:ro
+      # nocopy: a second guard against Docker's copy-up of the image's core + TPDM schema.
+      - type: volume
+        source: api-schema
+        target: /app/ApiSchema
+        read_only: true
+        volume:
+          nocopy: true
     depends_on:
       config:
         condition: service_healthy
       # Defined in compose.init.yml. DMS needs its CMS client at startup.
       init-identity:
+        condition: service_completed_successfully
+      init-datastore:
+        condition: service_completed_successfully
+      init-schema:
         condition: service_completed_successfully
     healthcheck:
       test: ["CMD-SHELL", "wget -q --spider http://localhost:8080/health || exit 1"]

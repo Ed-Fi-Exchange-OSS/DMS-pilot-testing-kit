@@ -4,7 +4,7 @@
 # See the LICENSE and NOTICES files in the project root for more information.
 
 # The locally built tools image and the one-shot initialization services that use it. Later tasks
-# add the schema, data store, template, and bootstrap services.
+# add the template and bootstrap services.
 #
 # Every service that uses the tools image merges x-tools-image, which carries both image: and build:.
 # `tools` is profile-gated, and a plain `up` doesn't build profile-gated services, so without the
@@ -57,5 +57,60 @@ services:
     depends_on:
       config:
         condition: service_healthy
+    restart: "no"
+    logging: *logging
+
+  # Copies the core DS 5.2 ApiSchema files from the DMS image into the api-schema volume. Root,
+  # because a fresh volume is root-owned; mounted at /stage so Docker's copy-up of the image's
+  # core + TPDM /app/ApiSchema never happens. See init/api-schema.sh.
+  init-api-schema:
+    image: ${DMS_IMAGE:?DMS_IMAGE must be set in .env}
+    entrypoint: ["sh", "/init/api-schema.sh"]
+    user: "0:0"
+    environment:
+      API_SCHEMA_SHA256: ${API_SCHEMA_SHA256:?API_SCHEMA_SHA256 must be set in .env}
+    volumes:
+      - ./init:/init:ro
+      - api-schema:/stage
+    restart: "no"
+    logging: *logging
+
+  # Registers the "Pilot Kit" data store in CMS; DMS won't start without one. See init/datastore.sh.
+  init-datastore:
+    <<: *tools-image
+    command: ["sh", "/init/datastore.sh"]
+    environment:
+      CMS_ADMIN_CLIENT_SECRET: ${CMS_ADMIN_CLIENT_SECRET:?CMS_ADMIN_CLIENT_SECRET must be set in .env}
+      # Direct, without the NGINX path base; the spike confirmed /connect/token answers here.
+      CONFIG_BASE_URL: http://config:8081
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD must be set in .env}
+      POSTGRES_DB_NAME: ${POSTGRES_DB_NAME:-edfi_datamanagementservice}
+      DMS_DB_MAX_POOL_SIZE: ${DMS_DB_MAX_POOL_SIZE:-50}
+    volumes:
+      - ./init:/init:ro
+    depends_on:
+      init-identity:
+        condition: service_completed_successfully
+    restart: "no"
+    logging: *logging
+
+  # Provisions the DS 5.2 relational schema. Waits for CMS so the two never run DDL at the same
+  # time, as in the spike. See init/provision-schema.sh.
+  init-schema:
+    <<: *tools-image
+    command: ["sh", "/init/provision-schema.sh"]
+    environment:
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD must be set in .env}
+      POSTGRES_DB_NAME: ${POSTGRES_DB_NAME:-edfi_datamanagementservice}
+    volumes:
+      - ./init:/init:ro
+      - api-schema:/app/ApiSchema:ro
+    depends_on:
+      db:
+        condition: service_healthy
+      config:
+        condition: service_healthy
+      init-api-schema:
+        condition: service_completed_successfully
     restart: "no"
     logging: *logging

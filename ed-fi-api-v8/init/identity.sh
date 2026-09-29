@@ -366,25 +366,7 @@ ensure_client PilotKitAdmin "Pilot Kit Admin" \
 # ------------------------------------------------------------------------------------------------
 
 self_check() {
-    _sc_response_file=$(mktemp "$WORK_DIR/token-response.XXXXXX")
-    _sc_status=$(curl -sS -o "$_sc_response_file" -w '%{http_code}' \
-        --request POST "${CONFIG_BASE_URL}/connect/token" \
-        --data-urlencode "grant_type=client_credentials" \
-        --data-urlencode "client_id=PilotKitAdmin" \
-        --data-urlencode "client_secret=${CMS_ADMIN_CLIENT_SECRET}" \
-        --data-urlencode "scope=edfi_admin_api/full_access") \
-        || die "$STEP_CHECK" "the token request to CONFIG_BASE_URL could not be sent"
-
-    if [ "$_sc_status" != "200" ]; then
-        rm -f "$_sc_response_file"
-        die "$STEP_CHECK" "PilotKitAdmin token request returned HTTP $_sc_status, expected 200"
-    fi
-
-    if ! jq -e '.access_token | type == "string" and length > 0' "$_sc_response_file" >/dev/null 2>&1; then
-        rm -f "$_sc_response_file"
-        die "$STEP_CHECK" "PilotKitAdmin token response had no access_token"
-    fi
-    rm -f "$_sc_response_file"
+    cms_token "$STEP_CHECK" PilotKitAdmin "$CMS_ADMIN_CLIENT_SECRET" edfi_admin_api/full_access >/dev/null
     log "$STEP_CHECK" "PilotKitAdmin token request succeeded"
 }
 

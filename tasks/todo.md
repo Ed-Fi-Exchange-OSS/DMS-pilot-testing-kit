@@ -17,8 +17,9 @@ The sandbox still has no Docker daemon, so new work is drafted here and verified
   empty-page bug it found is fixed; the browser "Try it out" check is still open.
 - Tools image: the spike's three defects (log4net path, no `unzip`, unwritable `api-schema` volume)
   are fixed in `tools/Dockerfile`, pending a host rebuild.
-- Next: Tasks 3 and 4, built and verified together as one startup chain (DMS can't start without
-  both), then Checkpoint A on the host.
+- Tasks 3 and 4: done, and Checkpoint A's clean start and no-op rerun pass on the host. Items still
+  unchecked below were tested only in the sandbox (secret rotation, invalid secrets, TPDM restaging).
+- Next: Phase 2 rechecks (Tasks 5–7) and Phase 3 (Tasks 8–11).
 
 ---
 
@@ -110,8 +111,8 @@ The spike's working recipe is in spike-notes Q2; port it to `sh` with `openssl` 
 Pass values to SQL as psql variables (`-v name=value`, `:'name'`), never by string concatenation.
 
 **Acceptance criteria:**
-- [ ] Clean start: CMS `/connect/token` issues a `PilotKitAdmin` token, and DMS logs no 401 from CMS
-- [ ] Second `up` makes no new key or client rows, and exits 0
+- [x] Clean start: CMS `/connect/token` issues a `PilotKitAdmin` token, and DMS logs no 401 from CMS
+- [x] Second `up` makes no new key or client rows, and exits 0
 - [ ] Changing a client secret in `.env` and running `up` again updates only that client; the old
       secret stops working and the new one works
 - [ ] An invalid secret in `.env` fails `init-identity` with a message naming the variable
@@ -160,12 +161,12 @@ Also:
 - Imports of kit claim sets (Task 11) also belong in this pre-DMS chain, since they only need CMS.
 
 **Acceptance criteria:**
-- [ ] Clean `up --wait` → DMS healthy; `GET /api` Discovery returns 200 with DS 5.2 and no TPDM
-- [ ] `dms."EffectiveSchema"` hash is `a0d39468ef30d3e99273065256bfffa42b799404ca5fbc09a8648f349d9217e1`
-- [ ] Re-run doesn't re-register the data store, restage the volume, or re-provision
+- [x] Clean `up --wait` → DMS healthy; `GET /api` Discovery returns 200 with DS 5.2 and no TPDM
+- [x] `dms."EffectiveSchema"` hash is `a0d39468ef30d3e99273065256bfffa42b799404ca5fbc09a8648f349d9217e1`
+- [x] Re-run doesn't re-register the data store, restage the volume, or re-provision
 - [ ] A volume pre-filled with TPDM (from copy-up) is detected and restaged as core only
 - [ ] Failure of any init step makes `up --wait` fail and names the service
-- [ ] `GET /api/metadata/xsd/ed-fi/files` and `/api/metadata/specifications/discovery-spec.json` return 200
+- [x] `GET /api/metadata/xsd/ed-fi/files` and `/api/metadata/specifications/discovery-spec.json` return 200
 
 **Verification:**
 - [ ] Manual: create a vendor and application via CMS by hand, get a token, and `GET` a descriptor list → 200
@@ -175,7 +176,8 @@ Also:
 **Estimated scope:** M
 
 ### Checkpoint A
-- [ ] Clean-volume `up --wait` succeeds; restart preserves data; second `up` is a no-op
+- [ ] Clean-volume `up --wait` succeeds; restart preserves data; second `up` is a no-op (clean start
+      and no-op rerun verified; restart preserving data not yet checked)
 - [ ] Review with human before proceeding
 
 ---
