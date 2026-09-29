@@ -42,6 +42,10 @@ require_env "$STEP_ENV" \
     CMS_IDENTITY_ENCRYPTION_KEY HASH_ITERATIONS \
     POSTGRES_DB_NAME POSTGRES_PASSWORD CONFIG_BASE_URL
 
+# Task 18 (FR-CLAIM-14): the role PilotKitAdmin needs to call DMS's claim-set reload endpoint.
+# Defaulted here (not required-env) so this script still runs standalone against a stub.
+DMS_CLAIMSET_RELOAD_ROLE="${DMS_CLAIMSET_RELOAD_ROLE:-dms-management-operator}"
+
 export PGHOST=db
 export PGUSER=postgres
 export PGDATABASE="$POSTGRES_DB_NAME"
@@ -90,6 +94,21 @@ if [ "${#CMS_IDENTITY_ENCRYPTION_KEY}" -lt 32 ]; then
     die "$STEP_ENV" "CMS_IDENTITY_ENCRYPTION_KEY must be at least 32 characters long"
 fi
 log "$STEP_ENV" "secrets are valid"
+
+# DMS's EndpointRequiredRole grammar (Configuration/EndpointRequiredRole.cs): 1-256 characters, no
+# control characters, and none of space , ; " ' [ ] { }. A value that fails this leaves DMS's claim-
+# set reload endpoint silently unmapped (DMS logs a warning; nothing here would otherwise notice).
+_role_len=${#DMS_CLAIMSET_RELOAD_ROLE}
+if [ "$_role_len" -eq 0 ] || [ "$_role_len" -gt 256 ]; then
+    die "$STEP_ENV" "DMS_CLAIMSET_RELOAD_ROLE must be 1-256 characters long (got $_role_len)"
+fi
+case "$DMS_CLAIMSET_RELOAD_ROLE" in
+    *[\ ,\;\"\'\[\]\{\}]*)
+        die "$STEP_ENV" \
+            "DMS_CLAIMSET_RELOAD_ROLE must not contain spaces, commas, semicolons, quotes, or [ ] { }"
+        ;;
+esac
+unset _role_len
 
 # ------------------------------------------------------------------------------------------------
 # Step b: wait, bounded, for CMS to have created its own tables. CMS's database deploy creates
@@ -360,9 +379,38 @@ ensure_client PilotKitAdmin "Pilot Kit Admin" \
     CMS_ADMIN_CLIENT_SECRET edfi_admin_api/full_access
 
 # ------------------------------------------------------------------------------------------------
-# Step g: self-check. Requests a token for PilotKitAdmin and confirms CMS actually accepts the
-# signing key and the hash this script just wrote. `--data-urlencode` keeps the secret out of the
-# argv the shell would otherwise show in a process listing; nothing here uses `set -x`.
+# Step g: grant PilotKitAdmin -- and only PilotKitAdmin -- the role that DMS's claim-set reload
+# endpoint requires (Task 18, FR-CLAIM-14). A participant integration credential (a CMS /v3/
+# applications vendor client) only ever gets IdentitySettings__ClientRole (dms-client), never this
+# role, so it cannot call the endpoint. Idempotent, same ON CONFLICT pattern as the dms-client/
+# cms-client grant inside ensure_client above.
+# ------------------------------------------------------------------------------------------------
+
+ensure_extra_role() {
+    _eer_client_id="$1"
+    _eer_role="$2"
+    kit_psql -v cid="$_eer_client_id" -v role="$_eer_role" -f - <<'SQL'
+BEGIN;
+
+INSERT INTO dmscs."OpenIddictRole" ("Id", "Name")
+VALUES (gen_random_uuid(), :'role')
+ON CONFLICT ON CONSTRAINT "UX_OpenIddictRole_Name" DO NOTHING;
+
+INSERT INTO dmscs."OpenIddictClientRole" ("ClientId", "RoleId")
+SELECT a."Id", r."Id" FROM dmscs."OpenIddictApplication" a, dmscs."OpenIddictRole" r
+WHERE a."ClientId" = :'cid' AND r."Name" = :'role'
+ON CONFLICT ON CONSTRAINT "PK_OpenIddictClientRole" DO NOTHING;
+
+COMMIT;
+SQL
+    log "$_eer_client_id" "has role '$_eer_role'"
+}
+
+ensure_extra_role PilotKitAdmin "$DMS_CLAIMSET_RELOAD_ROLE"
+
+# ------------------------------------------------------------------------------------------------
+# Step h: self-check. Requests a token for PilotKitAdmin and confirms CMS actually accepts the
+# signing key and the hash this script just wrote.
 # ------------------------------------------------------------------------------------------------
 
 self_check() {

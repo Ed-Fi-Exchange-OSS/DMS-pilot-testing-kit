@@ -75,3 +75,38 @@ non-empty `warnings` array on import, and the script fails rather than accept a 
 `init/claimsets.sh` imports every `*.json` file in this directory, in name order. A new file needs
 only `claimSetName` and a `resourceClaims` array in the same shape; the script validates both are
 present before calling CMS.
+
+## Applying claim set changes immediately
+
+DMS caches claim sets for up to 10 minutes (`ClaimSetsCacheExpirationSeconds`). A credential using a
+claim set that was just imported or changed while DMS was already running gets HTTP 500 "No security
+metadata has been configured for this resource" until that cache refreshes -- unless the cache is
+forced to reload first (Task 18, FR-CLAIM-14). `init/claimsets.sh` does this automatically for the
+files in this directory (see `reload_claim_set_if_running` there); this section is for reloading
+after a manual change made straight through CMS's API.
+
+Get a token for **PilotKitAdmin** (the kit's administrative CMS client; its secret is
+`CMS_ADMIN_CLIENT_SECRET` in `.env`) directly from CMS -- an ordinary integration credential cannot
+call this endpoint (see below):
+
+```sh
+TOKEN=$(curl -sk -X POST https://localhost/config/connect/token \
+    --data-urlencode grant_type=client_credentials \
+    --data-urlencode client_id=PilotKitAdmin \
+    --data-urlencode client_secret="$CMS_ADMIN_CLIENT_SECRET" \
+    --data-urlencode scope=edfi_admin_api/full_access \
+    | jq -r .access_token)
+```
+
+Then call the reload endpoint:
+
+```sh
+curl -k -X POST https://localhost/api/management/reload-claimsets \
+    -H "Authorization: Bearer $TOKEN"
+```
+
+A success response is `200` with `{"message": "Claimsets reloaded successfully"}`. Requests without
+a valid bearer token get `401`; a valid token that lacks the required role (only PilotKitAdmin has
+it -- see `init/identity.sh`, and note that a participant integration credential's `dms-client` role
+is never enough) gets `403`. With `DMS_CLAIMSET_RELOAD_ENABLED=false` in `.env`, the endpoint is not
+mapped at all and every request gets `404`, whatever the credential.

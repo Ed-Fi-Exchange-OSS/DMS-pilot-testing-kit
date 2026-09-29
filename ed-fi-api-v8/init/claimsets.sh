@@ -14,13 +14,20 @@
 #
 # Idempotent by name: GET /v3/claimSets first. Absent -> import. Present and identical (compared in
 # normalized form -- see canonicalize() below) -> skip. Present and different -> re-import (the
-# spike proved /v3/claimSets/import is an upsert by id in this build) and warn that a *running* DMS
-# still needs a restart or a claim-set reload (Task 18) for the change to take effect immediately.
-# Present and system-reserved -> fail; this script must never alter one of the 14 embedded claim sets
+# spike proved /v3/claimSets/import is an upsert by id in this build), then call DMS's claim-set
+# reload endpoint (Task 18, below) so a *running* DMS picks up the change immediately. Present and
+# system-reserved -> fail; this script must never alter one of the 14 embedded claim sets
 # (FR-CLAIM-5..8).
 #
-# CONFIG_BASE_URL and CLAIMSETS_DIR default to the compose values but are overridable, so this script
-# can be pointed at a stub CMS and a local directory for testing without a container.
+# Task 18 (FR-CLAIM-14): after importing (new or changed), calls DMS's POST .../management/reload-
+# claimsets with the PilotKitAdmin token above so the change is usable at once instead of waiting up
+# to 10 minutes for DMS's cache. Skipped, with a log line, when DMS_CLAIMSET_RELOAD_ENABLED is not
+# true or DMS is not reachable (the normal case on a clean first start: this service runs before DMS
+# starts, per compose.core.yml). A reload DMS actually answers and rejects fails the step (FR-BOOT-9).
+#
+# CONFIG_BASE_URL, CLAIMSETS_DIR, DMS_BASE_URL, and DMS_HEALTH_URL default to the compose values but
+# are overridable, so this script can be pointed at a stub CMS/DMS and a local directory for testing
+# without a container.
 
 set -eu
 
@@ -36,10 +43,14 @@ STEP_LIST=list-existing
 STEP_CHECK=check-existing
 STEP_COMPARE=compare-existing
 STEP_IMPORT=import
+STEP_RELOAD=reload-claimset
 
 require_env "$STEP_ENV" CMS_ADMIN_CLIENT_SECRET
 CONFIG_BASE_URL="${CONFIG_BASE_URL:-http://config:8081}"
 CLAIMSETS_DIR="${CLAIMSETS_DIR:-/claimsets}"
+DMS_CLAIMSET_RELOAD_ENABLED="${DMS_CLAIMSET_RELOAD_ENABLED:-true}"
+DMS_BASE_URL="${DMS_BASE_URL:-http://dms:8080/api}"
+DMS_HEALTH_URL="${DMS_HEALTH_URL:-http://dms:8080/health}"
 
 [ -d "$CLAIMSETS_DIR" ] || die "$STEP_ENV" "$CLAIMSETS_DIR is not a directory"
 
@@ -131,6 +142,54 @@ import_claim_set() {
 }
 
 # ------------------------------------------------------------------------------------------------
+# reload_claim_set_if_running <claim_set_name> -- Task 18 (FR-CLAIM-14). Forces DMS to drop its
+# up-to-10-minute claim-set cache (ClaimSetsCacheExpirationSeconds, spike-notes Q6/Q9) right after an
+# import, so the caller's claim set is usable at once. Uses the PilotKitAdmin token already obtained
+# above ($TOKEN): DMS validates it the same way it validates a data-request bearer token (both trust
+# CMS's issuer/audience/signing key), and PilotKitAdmin carries the role
+# AppSettings__ManagementEndpoints__RequiredRole requires (init/identity.sh).
+#
+# Never dies for "DMS isn't up" -- that is the normal case on a clean first start, since compose.
+# core.yml runs this service before DMS starts. Any other non-200 (401/403 from a misconfigured
+# role, or a real server error) fails the step: a reload DMS actually answered and refused means the
+# claim set change did not take effect, which the caller must not silently report as success.
+# ------------------------------------------------------------------------------------------------
+
+reload_claim_set_if_running() {
+    _rc_name="$1"
+
+    if [ "$DMS_CLAIMSET_RELOAD_ENABLED" != "true" ]; then
+        log "$STEP_RELOAD" "skipped for '$_rc_name': DMS_CLAIMSET_RELOAD_ENABLED is not true"
+        return 0
+    fi
+
+    _rc_health_status=$(kit_curl -o /dev/null -w '%{http_code}' "$DMS_HEALTH_URL" 2>/dev/null) \
+        || _rc_health_status=000
+    if [ "$_rc_health_status" != "200" ]; then
+        log "$STEP_RELOAD" \
+            "skipped for '$_rc_name': DMS is not reachable at $DMS_HEALTH_URL (HTTP $_rc_health_status)." \
+            "Expected on a clean first start (init-claimsets runs before dms, compose.core.yml); the" \
+            "up-to-10-minute cache window never opens because the claim set predates DMS's first request."
+        return 0
+    fi
+
+    _rc_response="$WORK_DIR/reload-response.json"
+    _rc_status=$(kit_curl -o "$_rc_response" -w '%{http_code}' \
+        --request POST "${DMS_BASE_URL}/management/reload-claimsets" \
+        --header "Authorization: Bearer $TOKEN") \
+        || die "$STEP_RELOAD" \
+            "POST ${DMS_BASE_URL}/management/reload-claimsets for '$_rc_name' failed or timed out"
+
+    if [ "$_rc_status" != "200" ]; then
+        die "$STEP_RELOAD" \
+            "POST ${DMS_BASE_URL}/management/reload-claimsets for '$_rc_name' returned HTTP" \
+            "$_rc_status, expected 200: $(cat "$_rc_response")"
+    fi
+
+    log "$STEP_RELOAD" "claim set '$_rc_name' reloaded; usable immediately"
+}
+
+# ------------------------------------------------------------------------------------------------
 # process_file <file>: validate, then decide absent/identical/different/system-reserved.
 # ------------------------------------------------------------------------------------------------
 
@@ -158,6 +217,7 @@ process_file() {
         log "$STEP_CHECK" "claim set '$_pf_claim_set_name' not found, importing from $_pf_name"
         import_claim_set "$_pf_file"
         log "$STEP_IMPORT" "imported claim set '$_pf_claim_set_name' from $_pf_name"
+        reload_claim_set_if_running "$_pf_claim_set_name"
         return 0
     fi
 
@@ -188,11 +248,8 @@ process_file() {
 
     log "$STEP_COMPARE" "claim set '$_pf_claim_set_name' differs from $_pf_name, re-importing"
     import_claim_set "$_pf_file"
-    log "$STEP_IMPORT" \
-        "WARNING: re-imported claim set '$_pf_claim_set_name'. A running DMS caches claim sets for" \
-        "up to 10 minutes (ClaimSetsCacheExpirationSeconds): restart DMS (docker compose restart dms)," \
-        "or call the claim-set reload endpoint once it exists (Task 18), for the change to take" \
-        "effect immediately."
+    log "$STEP_IMPORT" "re-imported claim set '$_pf_claim_set_name' from $_pf_name"
+    reload_claim_set_if_running "$_pf_claim_set_name"
 }
 
 # ------------------------------------------------------------------------------------------------

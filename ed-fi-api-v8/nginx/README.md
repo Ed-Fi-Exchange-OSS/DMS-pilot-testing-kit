@@ -19,6 +19,7 @@ NGINX is the kit's single HTTPS ingress. It uses the official `nginx` image (1.2
 | Path | Upstream | Prefix |
 | --- | --- | --- |
 | `/${DMS_PATH_BASE}` and `/${DMS_PATH_BASE}/` | `dms:8080` | kept (DMS runs with `PathBase`) |
+| `/${DMS_PATH_BASE}/management/reload-claimsets` (POST) and `/management/view-claimsets` (GET) | `dms:8080` | kept; no special handling -- matched by the `/${DMS_PATH_BASE}/` prefix location above like any other DMS path, so it gets the same rate limiting (when `RATE_LIMIT_ENABLED=true`) as the rest of DMS traffic and is untouched by the `/data/v3` rewrite (Task 18) |
 | `/${CMS_PATH_BASE}` and `/${CMS_PATH_BASE}/` | `config:8081` | kept (CMS runs with `PathBase`) |
 | `/swagger/` (`/swagger` 301s) | `swagger-ui:80` | stripped; `X-Forwarded-Prefix: /swagger` |
 | `/pgadmin/` (`/pgadmin` 301s) | `pgadmin:80` | kept (pgAdmin runs with `SCRIPT_NAME=/pgadmin`); WebSockets |

@@ -1,0 +1,30 @@
+# NOTE: this file assumes that DMS_CLAIMSET_RELOAD_ENABLED=TRUE
+
+### Reload claimset - not authenticated - expect 401
+### unless reload is disabled, in which case 404
+POST https://localhost/api/management/reload-claimsets
+
+### Reload claimset - fake token - expect 401
+POST https://localhost/api/management/reload-claimsets
+Authorization: Bearer this-is-not-a-valid-token
+
+#
+# when using VS Code's restclient plugin, see following for instructions on configuring
+# an environment variable for the CMS_ADMIN_CLIENT_SECRET
+# https://github.com/Huachao/vscode-restclient/blob/master/README.md#environment-variables
+
+
+### Authenticate
+# @name token
+POST https://localhost/config/connect/token
+Content-Type: application/x-www-form-urlencoded
+
+grant_type=client_credentials&client_id=PilotKitAdmin&client_secret={{CMS_ADMIN_CLIENT_SECRET}}&scope=edfi_admin_api/full_access
+
+### Reload claimsets - expect 200
+POST https://localhost/api/management/reload-claimsets
+Authorization: Bearer {{token.response.body.access_token}}
+
+### Get all claimsets
+GET https://localhost/api/management/view-claimsets
+Authorization: Bearer {{token.response.body.access_token}}
