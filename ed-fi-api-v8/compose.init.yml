@@ -3,24 +3,59 @@
 # The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 # See the LICENSE and NOTICES files in the project root for more information.
 
-# The locally built tools image and the one-shot initialization services that use it.
-# The init services (identity, schema, data store, template, bootstrap) are added in later tasks.
+# The locally built tools image and the one-shot initialization services that use it. Later tasks
+# add the schema, data store, template, and bootstrap services.
+#
+# Every service that uses the tools image merges x-tools-image, which carries both image: and build:.
+# `tools` is profile-gated, and a plain `up` doesn't build profile-gated services, so without the
+# shared build: section init-identity would try to pull edfi-pilot-tools:local, which isn't published.
+
+x-tools-image: &tools-image
+  image: edfi-pilot-tools:local
+  build:
+    context: ./tools
+    args:
+      DOTNET_SDK_IMAGE: ${DOTNET_SDK_IMAGE:?DOTNET_SDK_IMAGE must be set in .env}
+      DOTNET_RUNTIME_IMAGE: ${DOTNET_RUNTIME_IMAGE:?DOTNET_RUNTIME_IMAGE must be set in .env}
+      SCHEMATOOLS_VERSION: ${SCHEMATOOLS_VERSION:?SCHEMATOOLS_VERSION must be set in .env}
+      SCHEMATOOLS_SHA256: ${SCHEMATOOLS_SHA256:?SCHEMATOOLS_SHA256 must be set in .env}
+      BULKLOADCLIENT_VERSION: ${BULKLOADCLIENT_VERSION:?BULKLOADCLIENT_VERSION must be set in .env}
+      BULKLOADCLIENT_SHA256: ${BULKLOADCLIENT_SHA256:?BULKLOADCLIENT_SHA256 must be set in .env}
+
+# YAML anchors don't cross include: files, so each file defines its own copy.
+x-logging: &logging
+  driver: json-file
+  options:
+    max-size: "${DOCKER_LOG_MAX_SIZE:-50m}"
+    max-file: "${DOCKER_LOG_MAX_FILE:-5}"
 
 services:
-  # Interactive and scripted access to the tools image, for example:
-  #   docker compose run --rm tools api-schema-tools --version
-  # Only this service carries the build: section; init services reuse the same image tag.
   tools:
-    image: edfi-pilot-tools:local
-    build:
-      context: ./tools
-      args:
-        DOTNET_SDK_IMAGE: ${DOTNET_SDK_IMAGE:?DOTNET_SDK_IMAGE must be set in .env}
-        DOTNET_RUNTIME_IMAGE: ${DOTNET_RUNTIME_IMAGE:?DOTNET_RUNTIME_IMAGE must be set in .env}
-        SCHEMATOOLS_VERSION: ${SCHEMATOOLS_VERSION:?SCHEMATOOLS_VERSION must be set in .env}
-        SCHEMATOOLS_SHA256: ${SCHEMATOOLS_SHA256:?SCHEMATOOLS_SHA256 must be set in .env}
-        BULKLOADCLIENT_VERSION: ${BULKLOADCLIENT_VERSION:?BULKLOADCLIENT_VERSION must be set in .env}
-        BULKLOADCLIENT_SHA256: ${BULKLOADCLIENT_SHA256:?BULKLOADCLIENT_SHA256 must be set in .env}
+    <<: *tools-image
     profiles: ["tools"]
     volumes:
       - api-schema:/app/ApiSchema
+
+  # Seeds the OpenIddict signing key and the CMS system clients, then requests a token to prove them.
+  # CMS creates its own tables, so this runs after CMS is healthy. See init/identity.sh.
+  init-identity:
+    <<: *tools-image
+    command: ["sh", "/init/identity.sh"]
+    environment:
+      POSTGRES_DB_NAME: ${POSTGRES_DB_NAME:-edfi_datamanagementservice}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD must be set in .env}
+      CMS_SERVICE_CLIENT_SECRET: ${CMS_SERVICE_CLIENT_SECRET:?CMS_SERVICE_CLIENT_SECRET must be set in .env}
+      CMS_READONLY_CLIENT_SECRET: ${CMS_READONLY_CLIENT_SECRET:?CMS_READONLY_CLIENT_SECRET must be set in .env}
+      CMS_ADMIN_CLIENT_SECRET: ${CMS_ADMIN_CLIENT_SECRET:?CMS_ADMIN_CLIENT_SECRET must be set in .env}
+      CMS_IDENTITY_ENCRYPTION_KEY: ${CMS_IDENTITY_ENCRYPTION_KEY:?CMS_IDENTITY_ENCRYPTION_KEY must be set in .env}
+      # Must equal IdentitySettings__HashingIterations in compose.core.yml.
+      HASH_ITERATIONS: "210000"
+      # Direct, without the NGINX path base; the spike confirmed /connect/token answers here.
+      CONFIG_BASE_URL: http://config:8081
+    volumes:
+      - ./init:/init:ro
+    depends_on:
+      config:
+        condition: service_healthy
+    restart: "no"
+    logging: *logging
