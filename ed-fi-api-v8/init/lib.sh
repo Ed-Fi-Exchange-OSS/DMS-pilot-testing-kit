@@ -97,3 +97,179 @@ kit_curl() {
 kit_psql() {
     psql -v ON_ERROR_STOP=1 -X -q -tA "$@"
 }
+
+# dms_token <step> <dms_base_url> <key> <secret> -> the access_token on stdout.
+# Requests a client-credentials token directly from DMS (DMS proxies to CMS's /connect/token --
+# spike-notes Q7), using HTTP Basic auth with an application's key and secret -- how BulkLoadClient
+# and every provisioned participant credential authenticate, unlike cms_token above (which POSTs
+# client_id/client_secret to CMS directly, for the kit's own CMS system clients). Dies, naming
+# <step>, on a request that can't be sent, a non-200 response, or a 200 with no access_token.
+dms_token() {
+    _dtk_step="$1"
+    _dtk_base_url="$2"
+    _dtk_key="$3"
+    _dtk_secret="$4"
+    _dtk_response_file=$(mktemp "${TMPDIR:-/tmp}/dms-token.XXXXXX")
+    _dtk_status=$(kit_curl -o "$_dtk_response_file" -w '%{http_code}' \
+        --request POST "${_dtk_base_url}/oauth/token" \
+        --user "${_dtk_key}:${_dtk_secret}" \
+        --data-urlencode "grant_type=client_credentials") || {
+        rm -f "$_dtk_response_file"
+        die "$_dtk_step" "the token request to $_dtk_base_url/oauth/token failed or timed out"
+    }
+    if [ "$_dtk_status" != "200" ]; then
+        rm -f "$_dtk_response_file"
+        die "$_dtk_step" \
+            "token request to $_dtk_base_url/oauth/token returned HTTP $_dtk_status, expected 200"
+    fi
+    _dtk_token=$(jq -r '.access_token // empty' "$_dtk_response_file" 2>/dev/null)
+    rm -f "$_dtk_response_file"
+    [ -n "$_dtk_token" ] \
+        || die "$_dtk_step" "token response from $_dtk_base_url/oauth/token had no access_token"
+    printf '%s' "$_dtk_token"
+}
+
+# cms_request <step> <method> <url> <token> [curl-data-args...]
+# Issues one bearer-authenticated CMS request. Only a request that can't be sent or times out dies
+# here (naming <step>); the caller decides which status codes are acceptable, since that differs by
+# call (create-if-absent, a 200-or-201 upsert, a DELETE whose failure is only ever a warning). Sets
+# three globals for the caller to read before the next cms_* call overwrites them:
+#   CMS_REQUEST_STATUS       the HTTP status code
+#   CMS_REQUEST_BODY_FILE    path to a fresh temp file holding the response body
+#   CMS_REQUEST_LOCATION     the Location header value, or empty if none was sent
+# The body file is never removed here -- callers that don't need it must rm it themselves.
+cms_request() {
+    _crq_step="$1"
+    _crq_method="$2"
+    _crq_url="$3"
+    _crq_token="$4"
+    shift 4
+    CMS_REQUEST_BODY_FILE=$(mktemp "${TMPDIR:-/tmp}/cms-request.XXXXXX")
+    _crq_headers_file=$(mktemp "${TMPDIR:-/tmp}/cms-headers.XXXXXX")
+    CMS_REQUEST_STATUS=$(kit_curl -o "$CMS_REQUEST_BODY_FILE" -D "$_crq_headers_file" -w '%{http_code}' \
+        --request "$_crq_method" "$_crq_url" \
+        --header "Authorization: Bearer $_crq_token" "$@") || {
+        rm -f "$_crq_headers_file"
+        die "$_crq_step" "$_crq_method $_crq_url failed or timed out"
+    }
+    CMS_REQUEST_LOCATION=$(tr -d '\r' <"$_crq_headers_file" \
+        | sed -n 's/^[Ll]ocation:[[:space:]]*//p' | tail -n1)
+    rm -f "$_crq_headers_file"
+}
+
+# cms_ensure_vendor <step> <token> <company> <contact_name> <contact_email> <namespace_prefixes>
+# Finds a vendor by company name (GET-then-match: CMS has no upsert for this resource), or creates
+# one and parses its id from the Location header (POST /v3/vendors returns 201 with an empty body --
+# spike-notes Q7). Prints the vendor id on stdout.
+cms_ensure_vendor() {
+    _cev_step="$1"
+    _cev_token="$2"
+    _cev_company="$3"
+    _cev_contact_name="$4"
+    _cev_contact_email="$5"
+    _cev_namespace_prefixes="$6"
+
+    cms_request "$_cev_step" GET "${CONFIG_BASE_URL}/v3/vendors" "$_cev_token"
+    if [ "$CMS_REQUEST_STATUS" != "200" ]; then
+        die "$_cev_step" "GET /v3/vendors returned HTTP $CMS_REQUEST_STATUS: $(cat "$CMS_REQUEST_BODY_FILE")"
+    fi
+    _cev_id=$(jq -r --arg company "$_cev_company" \
+        'map(select(.company == $company)) | .[0].id // empty' "$CMS_REQUEST_BODY_FILE")
+    rm -f "$CMS_REQUEST_BODY_FILE"
+    if [ -n "$_cev_id" ]; then
+        printf '%s' "$_cev_id"
+        return 0
+    fi
+
+    _cev_body=$(jq -n \
+        --arg company "$_cev_company" \
+        --arg contactName "$_cev_contact_name" \
+        --arg contactEmailAddress "$_cev_contact_email" \
+        --arg namespacePrefixes "$_cev_namespace_prefixes" \
+        '{company: $company, contactName: $contactName, contactEmailAddress: $contactEmailAddress,
+          namespacePrefixes: $namespacePrefixes}')
+    cms_request "$_cev_step" POST "${CONFIG_BASE_URL}/v3/vendors" "$_cev_token" \
+        --header "Content-Type: application/json" --data "$_cev_body"
+    if [ "$CMS_REQUEST_STATUS" != "201" ]; then
+        die "$_cev_step" "POST /v3/vendors returned HTTP $CMS_REQUEST_STATUS: $(cat "$CMS_REQUEST_BODY_FILE")"
+    fi
+    rm -f "$CMS_REQUEST_BODY_FILE"
+    [ -n "$CMS_REQUEST_LOCATION" ] || die "$_cev_step" "POST /v3/vendors returned 201 with no Location header"
+    _cev_id=${CMS_REQUEST_LOCATION##*/}
+    [ -n "$_cev_id" ] || die "$_cev_step" "could not parse a vendor id from Location: $CMS_REQUEST_LOCATION"
+    printf '%s' "$_cev_id"
+}
+
+# cms_find_datastore_id <step> <token> <name> -> the data store id on stdout. Dies if none is
+# registered under that name -- callers of this run after init-datastore, so an absent data store
+# means something else is already broken.
+cms_find_datastore_id() {
+    _cfd_step="$1"
+    _cfd_token="$2"
+    _cfd_name="$3"
+    cms_request "$_cfd_step" GET "${CONFIG_BASE_URL}/v3/dataStores" "$_cfd_token"
+    if [ "$CMS_REQUEST_STATUS" != "200" ]; then
+        die "$_cfd_step" \
+            "GET /v3/dataStores returned HTTP $CMS_REQUEST_STATUS: $(cat "$CMS_REQUEST_BODY_FILE")"
+    fi
+    _cfd_id=$(jq -r --arg name "$_cfd_name" 'map(select(.name == $name)) | .[0].id // empty' \
+        "$CMS_REQUEST_BODY_FILE")
+    rm -f "$CMS_REQUEST_BODY_FILE"
+    [ -n "$_cfd_id" ] || die "$_cfd_step" "no data store named '$_cfd_name' found in GET /v3/dataStores"
+    printf '%s' "$_cfd_id"
+}
+
+# cms_create_application <step> <token> <body-json>
+# POSTs a full application body (vendorId, applicationName, claimSetName,
+# educationOrganizationIds, dataStoreIds, and so on -- this stays agnostic of the shape so Tasks 10
+# and 13 can reuse it for other claim sets). On success, sets CMS_APPLICATION_ID, CMS_APPLICATION_KEY
+# and CMS_APPLICATION_SECRET from the 201 response body -- the only place the secret is ever returned
+# (spike-notes Q7). Dies naming <step> on any other status, or on a 201 missing any of the three.
+cms_create_application() {
+    _cca_step="$1"
+    _cca_token="$2"
+    _cca_body="$3"
+    cms_request "$_cca_step" POST "${CONFIG_BASE_URL}/v3/applications" "$_cca_token" \
+        --header "Content-Type: application/json" --data "$_cca_body"
+    if [ "$CMS_REQUEST_STATUS" != "201" ]; then
+        die "$_cca_step" \
+            "POST /v3/applications returned HTTP $CMS_REQUEST_STATUS: $(cat "$CMS_REQUEST_BODY_FILE")"
+    fi
+    CMS_APPLICATION_ID=$(jq -r '.id // empty' "$CMS_REQUEST_BODY_FILE")
+    CMS_APPLICATION_KEY=$(jq -r '.key // empty' "$CMS_REQUEST_BODY_FILE")
+    CMS_APPLICATION_SECRET=$(jq -r '.secret // empty' "$CMS_REQUEST_BODY_FILE")
+    rm -f "$CMS_REQUEST_BODY_FILE"
+    if [ -z "$CMS_APPLICATION_ID" ] || [ -z "$CMS_APPLICATION_KEY" ] || [ -z "$CMS_APPLICATION_SECRET" ]; then
+        die "$_cca_step" "POST /v3/applications returned 201 but was missing id, key, or secret"
+    fi
+}
+
+# cms_find_application_ids_by_name <step> <token> <application_name> -> one id per line on stdout
+# (nothing if none match). Used to find and remove leftover kit applications left behind by an
+# earlier failed or interrupted run, matched by name rather than trusting a saved id.
+cms_find_application_ids_by_name() {
+    _cfa_step="$1"
+    _cfa_token="$2"
+    _cfa_name="$3"
+    cms_request "$_cfa_step" GET "${CONFIG_BASE_URL}/v3/applications" "$_cfa_token"
+    if [ "$CMS_REQUEST_STATUS" != "200" ]; then
+        die "$_cfa_step" \
+            "GET /v3/applications returned HTTP $CMS_REQUEST_STATUS: $(cat "$CMS_REQUEST_BODY_FILE")"
+    fi
+    jq -r --arg name "$_cfa_name" '.[] | select(.applicationName == $name) | .id' "$CMS_REQUEST_BODY_FILE"
+    rm -f "$CMS_REQUEST_BODY_FILE"
+}
+
+# cms_delete_application <step> <token> <id> -> the HTTP status code on stdout.
+# DELETE /v3/applications/{id} is not proven against real CMS as of Task 8 (the spike didn't cover
+# it). This only sends the request and reports the status -- it never dies, so callers can choose to
+# warn (a credential that should have been deleted, but wasn't, isn't a load failure) or fail,
+# depending on context.
+cms_delete_application() {
+    _cda_step="$1"
+    _cda_token="$2"
+    _cda_id="$3"
+    cms_request "$_cda_step" DELETE "${CONFIG_BASE_URL}/v3/applications/${_cda_id}" "$_cda_token"
+    rm -f "$CMS_REQUEST_BODY_FILE"
+    printf '%s' "$CMS_REQUEST_STATUS"
+}

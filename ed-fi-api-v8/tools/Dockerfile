@@ -123,8 +123,9 @@ ENV PATH="/opt/tools:${PATH}" \
 
 # Non-root: "app" (UID/GID 1654) is created by the .NET runtime-deps base image. BulkLoadClient
 # writes /work/logfile.txt, so /work must be writable. Docker initializes an empty named volume from
-# the image's mount point, so owning /app/ApiSchema here makes a fresh api-schema volume writable.
-RUN install -d -o 1654 -g 1654 /work /app/ApiSchema
+# the image's mount point, so owning /app/ApiSchema and /cache here makes fresh api-schema and
+# data-standard-cache volumes writable.
+RUN install -d -o 1654 -g 1654 /work /app/ApiSchema /cache
 
 # Build-time smoke check: proves both tools start on this runtime image (not just on the SDK). It runs
 # as root, so remove the log file it creates; otherwise the non-root user couldn't overwrite it.

@@ -150,6 +150,10 @@ services:
         condition: service_completed_successfully
       init-schema:
         condition: service_completed_successfully
+      # Defined in compose.init.yml. Importing DataWarehouse before DMS starts avoids the ~10-minute
+      # claim-set cache window (spike-notes Q6/Q9).
+      init-claimsets:
+        condition: service_completed_successfully
     healthcheck:
       test: ["CMD-SHELL", "wget -q --spider http://localhost:8080/health || exit 1"]
       interval: 10s
@@ -163,3 +167,5 @@ volumes:
   db-data:
   # DS 5.2 ApiSchema files, written by the init service in compose.init.yml and read by DMS.
   api-schema:
+  # The downloaded Data Standard zip, used by init-template in compose.init.yml.
+  data-standard-cache:
