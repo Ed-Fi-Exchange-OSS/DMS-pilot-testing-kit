@@ -36,42 +36,26 @@ Because Swagger UI and DMS now share one origin, DMS needs no CORS configuration
 Only these two variables are substituted. `envsubst` is given an explicit list, so no other `$`
 text in the files is touched.
 
-## Compose service (for `compose.yml`)
+## Compose service
 
-Serve the files with any static NGINX image. Reuse the kit's pinned NGINX image (for example
-`${NGINX_IMAGE}`) rather than adding another pin. The command below is adapted from DMS
-`swagger-ui.yml`:
-
-```yaml
-  swagger-ui:
-    image: ${NGINX_IMAGE}
-    environment:
-      DMS_BASE_PATH: ${SWAGGER_DMS_BASE_PATH:-/api}
-      DMS_SWAGGER_UI_ENABLE_CUSTOM_DOMAINS: ${DMS_SWAGGER_UI_ENABLE_CUSTOM_DOMAINS:-true}
-    volumes:
-      - ./swagger-ui:/tmp/swagger-template:ro
-    command: >
-      sh -c "envsubst '$$DMS_BASE_PATH $$DMS_SWAGGER_UI_ENABLE_CUSTOM_DOMAINS'
-             < /tmp/swagger-template/index.html > /usr/share/nginx/html/index.html &&
-             cp /tmp/swagger-template/*.js /tmp/swagger-template/favicon.png /usr/share/nginx/html/ &&
-             exec nginx -g 'daemon off;'"
-    healthcheck:
-      test: ["CMD-SHELL", "wget -q --spider http://127.0.0.1/ || exit 1"]
-      interval: 10s
-      timeout: 3s
-      retries: 6
-      start_period: 5s
-    # No ports: reachable only through the ingress at /swagger/.
-```
+The `swagger-ui` service in `../compose.ingress.yml` serves these files with the kit's pinned
+`${NGINX_IMAGE}`. Its command, adapted from DMS `swagger-ui.yml`, renders `index.html` with
+`envsubst`, checks that the result isn't empty, copies the JavaScript and favicon, and starts NGINX.
 
 Notes:
 
 - `$$` escapes `$` for Compose, so `envsubst` receives the literal list
   `'$DMS_BASE_PATH $DMS_SWAGGER_UI_ENABLE_CUSTOM_DOMAINS'`.
+- The script is a YAML literal block (`|`) passed to `sh -c`. Don't turn it into a folded block
+  (`>`): continuation lines indented more than the first keep their newlines, so `sh` ran `envsubst`
+  with no input and then truncated `index.html` to 0 bytes (found in the Phase 0 spike).
 - Using `sh -c` bypasses the official image's `/docker-entrypoint.sh` template processing, which is
   intentional here. The stock `default.conf` serves `/usr/share/nginx/html` on port 80.
 - `wget` in the health check is BusyBox `wget` in the alpine image. For a Debian-based NGINX image,
   use `curl -fsS http://127.0.0.1/ >/dev/null` instead.
+- `index.html` loads `swagger-ui-dist` from unpkg.com, without Subresource Integrity, so the browser
+  needs internet access. This is a known limitation until the files are vendored or a published
+  Swagger UI image replaces them.
 
 ## Ingress requirements (NGINX `default.conf.template`)
 

@@ -54,12 +54,18 @@ services:
       DMS_SWAGGER_UI_ENABLE_CUSTOM_DOMAINS: ${DMS_SWAGGER_UI_ENABLE_CUSTOM_DOMAINS:-true}
     volumes:
       - ./swagger-ui:/tmp/swagger-template:ro
-    # sh -c bypasses the image's template processing on purpose; see swagger-ui/README.md.
-    command: >
-      sh -c "envsubst '$$DMS_BASE_PATH $$DMS_SWAGGER_UI_ENABLE_CUSTOM_DOMAINS'
-             < /tmp/swagger-template/index.html > /usr/share/nginx/html/index.html &&
-             cp /tmp/swagger-template/*.js /tmp/swagger-template/favicon.png /usr/share/nginx/html/ &&
-             exec nginx -g 'daemon off;'"
+    # sh -c bypasses the image's template processing on purpose; see swagger-ui/README.md. The script
+    # is a literal block, so each line is one shell line: end every line but the last with && or \. The
+    # folded (>) form with extra indentation kept its newlines and truncated index.html to 0 bytes.
+    command:
+      - sh
+      - -c
+      - |
+        envsubst '$$DMS_BASE_PATH $$DMS_SWAGGER_UI_ENABLE_CUSTOM_DOMAINS' \
+          < /tmp/swagger-template/index.html > /usr/share/nginx/html/index.html &&
+        test -s /usr/share/nginx/html/index.html &&
+        cp /tmp/swagger-template/*.js /tmp/swagger-template/favicon.png /usr/share/nginx/html/ &&
+        exec nginx -g 'daemon off;'
     healthcheck:
       test: ["CMD-SHELL", "wget -q --spider http://127.0.0.1/ || exit 1"]
       interval: 10s
