@@ -11,13 +11,17 @@ Compose builds it on first `up`; participants need no host .NET SDK.
 | `api-schema-tools` (on `PATH`, `/opt/tools`) | `EdFi.Api.SchemaTools` .NET tool: `hash`, `ddl emit`, `ddl provision`, `cdc` |
 | `/opt/bulkloadclient/EdFi.BulkLoadClient.Console.dll` | `EdFi.Suite3.BulkLoadClient.Console`, flattened from the tool package |
 | `bulkloadclient` (`/usr/local/bin`) | Wrapper for `dotnet /opt/bulkloadclient/EdFi.BulkLoadClient.Console.dll "$@"` |
-| `curl`, `jq`, `psql`, `openssl`, `ca-certificates` | From Ubuntu 24.04 apt; `psql` is PostgreSQL 16 |
+| `curl`, `jq`, `psql`, `openssl`, `unzip`, `ca-certificates` | From Ubuntu 24.04 apt; `psql` is PostgreSQL 16 |
 | `BULKLOADCLIENT_DLL` env var | Path of the BulkLoadClient DLL, for scripts that prefer `dotnet "$BULKLOADCLIENT_DLL"` |
 
 The image runs as the non-root `app` user (UID/GID 1654, from the .NET base image), in `WORKDIR
 /work`, and defaults to `CMD ["sh"]`. There is no `ENTRYPOINT`, so a Compose service can run
 `command: ["sh", "/init/provision-schema.sh"]` or similar. `HEALTHCHECK NONE`: these are one-shot
 containers gated with `service_completed_successfully`.
+
+`/work` and `/app/ApiSchema` are owned by `app`. Docker initializes an empty named volume from the
+image's mount point, so a fresh `api-schema` volume mounted at `/app/ApiSchema` is writable by the
+non-root user.
 
 ### Build stages
 
@@ -101,8 +105,11 @@ The feed also carries BulkLoadClient `7.3.20185` (newer). It is not used, becaus
 - The DMS seed loader invokes it as `dotnet EdFi.BulkLoadClient.Console.dll` with
   `-b <dmsBaseUrl> -d <dataDir> -w <workDir> -k <key> -s <secret> -o <oauthUrl> -x <xsdDir> -c 10 -l 10 -t 5 -r 2`.
   The low concurrency (`-c 10 -l 10 -t 5 -r 2`) avoids tripping DMS's circuit breaker.
-- Writes `logfile.txt` (log4net `RollingAppender`) to the current directory, so run it from `/work`
-  or a mounted writable directory.
+- Its log4net `RollingAppender` writes a relative `logfile.txt`, which log4net resolves against the
+  app directory (`/opt/bulkloadclient`), not the working directory. The build repoints it at
+  `/work/logfile.txt`, and removes the copy created by the root-run smoke check; otherwise every run
+  as UID 1654 printed a log4net error per log event (about 21,800 during a descriptor load). Console
+  output is unaffected. Pass `-w` a writable directory under `/work` for BulkLoadClient's working files.
 
 ## Bumping a version
 
@@ -128,22 +135,20 @@ The feed also carries BulkLoadClient `7.3.20185` (newer). It is not used, becaus
    Keep the SDK and runtime images on the same .NET runtime patch level.
 5. Rebuild with `docker compose build tools` and confirm the build-time smoke check passes.
 
-## Not yet verified (for the Task 1 spike)
+## Verification status
 
-This environment had no Docker daemon. The Dockerfile passes `hadolint` 2.15.1 with no findings; older releases such as 2.12.0 report
-`DL3006` on the `ARG`-based `FROM` lines, a false positive because the images are digest-pinned. Its
-build-stage shell logic (download, hash check, tool install, and flatten) was run locally with the
-same commands, and both tools ran on a host .NET 10.0.11 runtime. Still unproven:
+The Phase 0 spike (see `tasks/spike-notes.md`, Q1 and Q5) built this image on an amd64 Docker Desktop
+host. Both tools ran on `dotnet/runtime:10.0.12-noble`, the relocated `api-schema-tools` shim found
+the runtime, `ddl provision` produced a schema that DMS `8.0.1-alpha.0.164` accepts, and
+BulkLoadClient loaded all DS 5.2 descriptors and the sample data directly against DMS. The
+Dockerfile passes `hadolint` 2.15.1 with no findings; older releases such as 2.12.0 report `DL3006`
+on the `ARG`-based `FROM` lines, a false positive because the images are digest-pinned.
 
-- [ ] The image builds, and the final-stage smoke check passes on `dotnet/runtime:10.0.12-noble`, on
-      both amd64 and arm64 hosts
-- [ ] The relocated `/opt/tools/api-schema-tools` shim finds the runtime in `/usr/share/dotnet`
-      (`DOTNET_ROOT` is set defensively)
-- [ ] `ddl provision` against the kit's `postgres:16` container produces a schema that the DMS
-      `8.0.1-alpha.0.164` image accepts (DMS stops returning 503)
+Still unproven:
+
+- [ ] The image builds and runs on arm64 hosts
+- [ ] The log4net and `/app/ApiSchema` ownership fixes (made after the spike) behave as described
 - [ ] `ddl provision` works as a non-superuser if the kit ever stops using `postgres`
       (`edfi_dms_enqueue_owner` role creation)
-- [ ] BulkLoadClient `7.3.20162` loads DS 5.2 `Descriptors/` through the NGINX or direct DMS URL
-      from this image, and the pin still matches the DMS repo at the time of the pilot
 - [ ] UID 1654 can write to any bind-mounted output directory on Linux hosts (for example
       `.runtime/`); if not, the Compose service may need `user:` overrides

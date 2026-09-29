@@ -130,7 +130,7 @@ services:
       JwtAuthentication__RoleClaimType: http://schemas.microsoft.com/ws/2008/06/identity/claims/role
       JwtAuthentication__ClientRole: dms-client
       Cors__SwaggerUIOrigin: ${PUBLIC_ORIGIN:-https://localhost}
-      Serilog__MinimumLevel__Default: ${DMS_LOG_LEVEL:-Information}
+      Serilog__MinimumLevel__Default: ${DMS_LOG_LEVEL:-Warning}
     volumes:
       - api-schema:/app/ApiSchema:ro
     depends_on:

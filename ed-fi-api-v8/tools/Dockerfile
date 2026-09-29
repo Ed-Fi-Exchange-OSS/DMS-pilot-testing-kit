@@ -11,7 +11,7 @@
 #   /opt/tools/api-schema-tools                         EdFi.Api.SchemaTools (.NET tool shim, on PATH)
 #   /opt/bulkloadclient/EdFi.BulkLoadClient.Console.dll EdFi.Suite3.BulkLoadClient.Console
 #   /usr/local/bin/bulkloadclient                       wrapper: dotnet .../EdFi.BulkLoadClient.Console.dll "$@"
-#   curl, jq, psql (postgresql-client), openssl, ca-certificates
+#   curl, jq, psql (postgresql-client), openssl, unzip, ca-certificates
 #
 # Every default below is a pin. See README.md in this directory for provenance and how to bump.
 
@@ -58,7 +58,9 @@ RUN fetch() { \
 #
 # BulkLoadClient: installed the same way only to let NuGet do the extraction, then flattened to
 # /opt/bulkloadclient so it can be invoked as `dotnet EdFi.BulkLoadClient.Console.dll`, which is
-# how the DMS seed loader runs it.
+# how the DMS seed loader runs it. Its log4net.config names a relative logfile.txt, which log4net
+# resolves against the app directory, not the working directory; the non-root user can't write
+# there, so the rolling log is repointed at /work.
 RUN dotnet tool install edfi.api.schematools \
         --tool-path /opt/tools --version "$SCHEMATOOLS_VERSION" --source /pkgs \
     && find /opt/tools/.store -name '*.nupkg' -delete \
@@ -70,7 +72,9 @@ RUN dotnet tool install edfi.api.schematools \
     && if [ "${#dirs[@]}" -ne 1 ]; then echo "ERROR: expected one tools/net*/any dir, found ${#dirs[@]}" >&2; exit 1; fi \
     && mkdir -p /opt/bulkloadclient \
     && cp -a "${dirs[0]}/." /opt/bulkloadclient/ \
-    && test -f /opt/bulkloadclient/EdFi.BulkLoadClient.Console.dll
+    && test -f /opt/bulkloadclient/EdFi.BulkLoadClient.Console.dll \
+    && sed -i 's|<file value="logfile.txt" />|<file value="/work/logfile.txt" />|' /opt/bulkloadclient/log4net.config \
+    && grep -q '<file value="/work/logfile.txt" />' /opt/bulkloadclient/log4net.config
 
 # ---------------------------------------------------------------------------------------------
 # Stage 2: runtime image. Both tools target net10.0 and need only Microsoft.NETCore.App (see their
@@ -104,6 +108,7 @@ RUN apt-get update \
         jq \
         openssl \
         postgresql-client \
+        unzip \
     && rm -rf /var/lib/apt/lists/*
 
 COPY --from=build /opt/tools /opt/tools
@@ -116,15 +121,20 @@ ENV PATH="/opt/tools:${PATH}" \
     DOTNET_NOLOGO=1 \
     BULKLOADCLIENT_DLL=/opt/bulkloadclient/EdFi.BulkLoadClient.Console.dll
 
-# Build-time smoke check: proves both tools start on this runtime image (not just on the SDK).
+# Non-root: "app" (UID/GID 1654) is created by the .NET runtime-deps base image. BulkLoadClient
+# writes /work/logfile.txt, so /work must be writable. Docker initializes an empty named volume from
+# the image's mount point, so owning /app/ApiSchema here makes a fresh api-schema volume writable.
+RUN install -d -o 1654 -g 1654 /work /app/ApiSchema
+
+# Build-time smoke check: proves both tools start on this runtime image (not just on the SDK). It runs
+# as root, so remove the log file it creates; otherwise the non-root user couldn't overwrite it.
 RUN api-schema-tools --version \
     && bulkloadclient --version \
     && psql --version \
-    && jq --version
+    && jq --version \
+    && unzip -v > /dev/null \
+    && rm -f /work/logfile.txt
 
-# Non-root: "app" (UID/GID 1654) is created by the .NET runtime-deps base image. BulkLoadClient
-# writes logfile.txt and its working files to the current directory, so /work must be writable.
-RUN install -d -o 1654 -g 1654 /work
 WORKDIR /work
 USER 1654:1654
 
