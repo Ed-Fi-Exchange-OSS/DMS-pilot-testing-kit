@@ -3,8 +3,8 @@
 # The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 # See the LICENSE and NOTICES files in the project root for more information.
 
-# The locally built tools image and the one-shot initialization services that use it. Later tasks
-# add the template and bootstrap services.
+# The locally built tools image, the one-shot initialization services that use it, and the `tools`
+# service that runs participant scripts on demand.
 #
 # Every service that uses the tools image merges x-tools-image, which carries both image: and build:.
 # `tools` is profile-gated, and a plain `up` doesn't build profile-gated services, so without the
@@ -30,11 +30,39 @@ x-logging: &logging
     max-file: "${DOCKER_LOG_MAX_FILE:-5}"
 
 services:
+  # Runs the participant scripts (new-credential, smoke-test) and ad hoc tools against a running
+  # stack, for example `docker compose run --rm --no-deps tools sh /init/smoke-test.sh`. Wrappers pass
+  # --no-deps so a stopped stack fails with "run start first" instead of being started, and
+  # --user 0:0 when writing to .runtime/ (see init/bootstrap.sh for the ownership handling).
   tools:
     <<: *tools-image
     profiles: ["tools"]
+    environment:
+      CMS_ADMIN_CLIENT_SECRET: ${CMS_ADMIN_CLIENT_SECRET:?CMS_ADMIN_CLIENT_SECRET must be set in .env}
+      CONFIG_BASE_URL: http://config:8081
+      DMS_BASE_URL: http://dms:8080/${DMS_PATH_BASE:-api}
+      DMS_HEALTH_URL: http://dms:8080/health
+      # The same routes participants use, through NGINX on the Compose network. The certificate's SANs
+      # include "nginx", so clients verify it with /ssl/server.crt instead of skipping TLS checks.
+      INGRESS_BASE_URL: https://nginx
+      INGRESS_CA_FILE: /ssl/server.crt
+      PUBLIC_ORIGIN: ${PUBLIC_ORIGIN:-https://localhost}
+      DMS_PATH_BASE: ${DMS_PATH_BASE:-api}
+      CMS_PATH_BASE: ${CMS_PATH_BASE:-config}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD must be set in .env}
+      POSTGRES_DB_NAME: ${POSTGRES_DB_NAME:-edfi_datamanagementservice}
+      DATABASE_TEMPLATE: ${DATABASE_TEMPLATE:-minimal}
+      POPULATED_SEED_EDORG_IDS: ${POPULATED_SEED_EDORG_IDS:-255901,255950,6000203,19255901}
+      DATA_V3_REWRITE_ENABLED: ${DATA_V3_REWRITE_ENABLED:-true}
+      BOOTSTRAP_DIR: /bootstrap
+      RUNTIME_DIR: /runtime
     volumes:
       - api-schema:/app/ApiSchema
+      - ./init:/init:ro
+      - ./bootstrap:/bootstrap:ro
+      - ./.runtime:/runtime
+      - ./ssl:/ssl:ro
+      - ./http:/http:ro
 
   # Seeds the OpenIddict signing key and the CMS system clients, then requests a token to prove them.
   # CMS creates its own tables, so this runs after CMS is healthy. See init/identity.sh.

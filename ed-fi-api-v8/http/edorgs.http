@@ -1,0 +1,213 @@
+# SPDX-License-Identifier: Apache-2.0
+# Licensed to the Ed-Fi Alliance under one or more agreements.
+# The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
+# See the LICENSE and NOTICES files in the project root for more information.
+
+# Ed-Fi API v8 pilot kit: the baseline education organization hierarchy (Task 14, FR-EDORG-1, 3, 6,
+# 9, 10, 16). `init/bootstrap.sh` (Task 10) already creates these five records automatically on
+# startup (FR-EDORG-12) -- you do not need to run this file for a normal start. It exists for two
+# other reasons: to show exactly what the kit created on your behalf, and to add or repair
+# organizations by hand. bootstrap/baseline-edorgs.json is the single source of truth for the
+# identifiers, grade levels, and school categories below; this file and that one must never diverge
+# (FR-EDORG-14) -- see bootstrap/README.md.
+#
+# Fill in @key and @secret before running anything past the token request, from
+# .runtime/bootstrap-credentials.json or a REST Client environment -- see http/smoke.http's header
+# for both options. This file is intended for the bootstrap (ADMIN) credential specifically
+# (FR-EDORG-11): only it is broad enough to create education organizations. Running these requests
+# with a scoped participant integration credential instead is the most likely failure (FR-EDORG-13)
+# and returns 403, for example:
+#   "No relationships have been established between the caller's education organization id claim(s)
+#   ('<your scoped id>') and the resource item's 'StateEducationAgencyId' value."
+#
+# Every POST below is safe to re-run, including against an environment where bootstrapping already
+# created the baseline: DMS upserts by natural key, so a repeat POST returns 200, not a duplicate
+# (FR-EDORG-6).
+
+@baseUrl = https://localhost/api
+@key =
+@secret =
+
+# Baseline identifiers (bootstrap/baseline-edorgs.json, FR-EDORG-7). Chosen not to collide with the
+# populated template's sample organizations -- LEA 255901, ESC 255950, post-secondary institution
+# 6000203, community provider 19255901, and their schools (FR-EDORG-8).
+@seaId = 99
+@leaId = 9900
+@elementarySchoolId = 990001
+@middleSchoolId = 990002
+@highSchoolId = 990003
+
+### Token
+# @name token
+POST {{baseUrl}}/oauth/token
+Authorization: Basic {{key}} {{secret}}
+Content-Type: application/x-www-form-urlencoded
+
+grant_type=client_credentials
+
+# -------------------------------------------------------------------------------------------------
+# The hierarchy, in dependency order (FR-EDORG-3): the SEA first, since nothing references it;
+# then the LEA, which references the SEA; then the three schools, which reference the LEA.
+# -------------------------------------------------------------------------------------------------
+
+### 1. State Education Agency
+POST {{baseUrl}}/data/ed-fi/stateEducationAgencies
+Authorization: Bearer {{token.response.body.access_token}}
+Content-Type: application/json
+
+{
+  "stateEducationAgencyId": {{seaId}},
+  "nameOfInstitution": "Pilot Kit State Education Agency",
+  "categories": [
+    { "educationOrganizationCategoryDescriptor": "uri://ed-fi.org/EducationOrganizationCategoryDescriptor#State Education Agency" }
+  ]
+}
+
+### 2. Local Education Agency, referencing the SEA above
+POST {{baseUrl}}/data/ed-fi/localEducationAgencies
+Authorization: Bearer {{token.response.body.access_token}}
+Content-Type: application/json
+
+{
+  "localEducationAgencyId": {{leaId}},
+  "nameOfInstitution": "Pilot Kit Local Education Agency",
+  "localEducationAgencyCategoryDescriptor": "uri://ed-fi.org/LocalEducationAgencyCategoryDescriptor#Regular public school district",
+  "categories": [
+    { "educationOrganizationCategoryDescriptor": "uri://ed-fi.org/EducationOrganizationCategoryDescriptor#Local Education Agency" }
+  ],
+  "stateEducationAgencyReference": { "stateEducationAgencyId": {{seaId}} }
+}
+
+### 3. Elementary school, referencing the LEA above.
+# DS 5.2 naming quirk (bootstrap/README.md): schools use "educationOrganizationCategories", not
+# "categories" like the SEA/LEA above -- DMS rejects the wrong name with 400 "categories is required".
+POST {{baseUrl}}/data/ed-fi/schools
+Authorization: Bearer {{token.response.body.access_token}}
+Content-Type: application/json
+
+{
+  "schoolId": {{elementarySchoolId}},
+  "nameOfInstitution": "Pilot Kit Elementary School",
+  "educationOrganizationCategories": [
+    { "educationOrganizationCategoryDescriptor": "uri://ed-fi.org/EducationOrganizationCategoryDescriptor#School" }
+  ],
+  "schoolCategories": [
+    { "schoolCategoryDescriptor": "uri://ed-fi.org/SchoolCategoryDescriptor#Elementary School" }
+  ],
+  "gradeLevels": [
+    { "gradeLevelDescriptor": "uri://ed-fi.org/GradeLevelDescriptor#Kindergarten" },
+    { "gradeLevelDescriptor": "uri://ed-fi.org/GradeLevelDescriptor#First grade" },
+    { "gradeLevelDescriptor": "uri://ed-fi.org/GradeLevelDescriptor#Second grade" },
+    { "gradeLevelDescriptor": "uri://ed-fi.org/GradeLevelDescriptor#Third grade" },
+    { "gradeLevelDescriptor": "uri://ed-fi.org/GradeLevelDescriptor#Fourth grade" },
+    { "gradeLevelDescriptor": "uri://ed-fi.org/GradeLevelDescriptor#Fifth grade" }
+  ],
+  "localEducationAgencyReference": { "localEducationAgencyId": {{leaId}} }
+}
+
+### 4. Middle school, referencing the LEA above
+POST {{baseUrl}}/data/ed-fi/schools
+Authorization: Bearer {{token.response.body.access_token}}
+Content-Type: application/json
+
+{
+  "schoolId": {{middleSchoolId}},
+  "nameOfInstitution": "Pilot Kit Middle School",
+  "educationOrganizationCategories": [
+    { "educationOrganizationCategoryDescriptor": "uri://ed-fi.org/EducationOrganizationCategoryDescriptor#School" }
+  ],
+  "schoolCategories": [
+    { "schoolCategoryDescriptor": "uri://ed-fi.org/SchoolCategoryDescriptor#Middle School" }
+  ],
+  "gradeLevels": [
+    { "gradeLevelDescriptor": "uri://ed-fi.org/GradeLevelDescriptor#Sixth grade" },
+    { "gradeLevelDescriptor": "uri://ed-fi.org/GradeLevelDescriptor#Seventh grade" },
+    { "gradeLevelDescriptor": "uri://ed-fi.org/GradeLevelDescriptor#Eighth grade" }
+  ],
+  "localEducationAgencyReference": { "localEducationAgencyId": {{leaId}} }
+}
+
+### 5. High school, referencing the LEA above
+POST {{baseUrl}}/data/ed-fi/schools
+Authorization: Bearer {{token.response.body.access_token}}
+Content-Type: application/json
+
+{
+  "schoolId": {{highSchoolId}},
+  "nameOfInstitution": "Pilot Kit High School",
+  "educationOrganizationCategories": [
+    { "educationOrganizationCategoryDescriptor": "uri://ed-fi.org/EducationOrganizationCategoryDescriptor#School" }
+  ],
+  "schoolCategories": [
+    { "schoolCategoryDescriptor": "uri://ed-fi.org/SchoolCategoryDescriptor#High School" }
+  ],
+  "gradeLevels": [
+    { "gradeLevelDescriptor": "uri://ed-fi.org/GradeLevelDescriptor#Ninth grade" },
+    { "gradeLevelDescriptor": "uri://ed-fi.org/GradeLevelDescriptor#Tenth grade" },
+    { "gradeLevelDescriptor": "uri://ed-fi.org/GradeLevelDescriptor#Eleventh grade" },
+    { "gradeLevelDescriptor": "uri://ed-fi.org/GradeLevelDescriptor#Twelfth grade" }
+  ],
+  "localEducationAgencyReference": { "localEducationAgencyId": {{leaId}} }
+}
+
+# -------------------------------------------------------------------------------------------------
+# Verification (FR-EDORG-9): read the hierarchy back by reference, rather than by the ids you just
+# posted, so you can confirm the relationships resolved and not only that each record exists.
+# -------------------------------------------------------------------------------------------------
+
+### Verify: the LEA, by its SEA reference
+GET {{baseUrl}}/data/ed-fi/localEducationAgencies?stateEducationAgencyId={{seaId}}
+Authorization: Bearer {{token.response.body.access_token}}
+
+### Verify: the three schools, by their LEA reference
+GET {{baseUrl}}/data/ed-fi/schools?localEducationAgencyId={{leaId}}
+Authorization: Bearer {{token.response.body.access_token}}
+
+# -------------------------------------------------------------------------------------------------
+# Templates for adding more organizations (FR-EDORG-16). Copy a block below, uncomment it (remove the
+# leading "# " from every line, including the JSON), and change the id and name. Pick an id that
+# doesn't collide with the baseline above or the populated template's sample organizations
+# (255901, 255950, 6000203, 19255901, and their schools -- FR-EDORG-8). Keep every reference target
+# earlier in the file than the record that references it (FR-EDORG-3), and add the new record to
+# bootstrap/baseline-edorgs.json too if it should also be created automatically on startup
+# (FR-EDORG-14).
+# -------------------------------------------------------------------------------------------------
+
+# ### A second Local Education Agency under the same SEA
+# POST {{baseUrl}}/data/ed-fi/localEducationAgencies
+# Authorization: Bearer {{token.response.body.access_token}}
+# Content-Type: application/json
+#
+# {
+#   "localEducationAgencyId": 9901,
+#   "nameOfInstitution": "A Second Pilot Kit Local Education Agency",
+#   "localEducationAgencyCategoryDescriptor": "uri://ed-fi.org/LocalEducationAgencyCategoryDescriptor#Regular public school district",
+#   "categories": [
+#     { "educationOrganizationCategoryDescriptor": "uri://ed-fi.org/EducationOrganizationCategoryDescriptor#Local Education Agency" }
+#   ],
+#   "stateEducationAgencyReference": { "stateEducationAgencyId": {{seaId}} }
+# }
+
+# ### A second school under the baseline LEA
+# POST {{baseUrl}}/data/ed-fi/schools
+# Authorization: Bearer {{token.response.body.access_token}}
+# Content-Type: application/json
+#
+# {
+#   "schoolId": 990004,
+#   "nameOfInstitution": "A Second Pilot Kit School",
+#   "educationOrganizationCategories": [
+#     { "educationOrganizationCategoryDescriptor": "uri://ed-fi.org/EducationOrganizationCategoryDescriptor#School" }
+#   ],
+#   "schoolCategories": [
+#     { "schoolCategoryDescriptor": "uri://ed-fi.org/SchoolCategoryDescriptor#High School" }
+#   ],
+#   "gradeLevels": [
+#     { "gradeLevelDescriptor": "uri://ed-fi.org/GradeLevelDescriptor#Ninth grade" }
+#   ],
+#   "localEducationAgencyReference": { "localEducationAgencyId": {{leaId}} }
+# }
+
+# FR-EDORG-15 (comparative ODS/API route): not covered -- the odsapi Compose profile does not exist
+# in this kit yet (see tasks/todo.md); add an equivalent sequence against ODS Admin API here once it
+# does.

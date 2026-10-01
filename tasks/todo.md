@@ -29,7 +29,10 @@ The sandbox still has no Docker daemon, so new work is drafted here and verified
 - Task 18: done and verified on the host (reload returns 200, a new claim set imported on a running
   stack is reloaded at once, bootstrap token → 403, anonymous → 401, switch off → 404).
   `http/claimset-test.http` exercises the endpoint.
-- Next: Checkpoint C, then Phase 4 (Tasks 12–14).
+- Checkpoint C: passes on the host.
+- Tasks 12–14: implemented. On the host so far, `smoke-test.sh` passes in Git Bash; the other Phase 4
+  checks (start/stop/reset/bootstrap, new-credential shapes, PowerShell, REST Client) are pending.
+- Next: finish the Phase 4 host checks (Checkpoint D), then Phase 5 (Tasks 15–17).
 
 ---
 
@@ -614,6 +617,11 @@ dispatch. It also runs `shellcheck` and `PSScriptAnalyzer` over the scripts.
 
 **Verification:**
 - [ ] A PR run
+
+Linux notes: the scripts that read `.runtime/` run the tools container as `--user 0:0`, which works
+with rootful Docker Engine (the Ubuntu runner), rootless Docker, and Podman, but not with
+`userns-remap`. SELinux in enforcing mode (Fedora, RHEL) would block every bind mount unless they get
+a `:z` label; test there before relying on it.
 
 **Dependencies:** Task 14
 **Files likely touched:** `.github/workflows/kit-smoke.yml`

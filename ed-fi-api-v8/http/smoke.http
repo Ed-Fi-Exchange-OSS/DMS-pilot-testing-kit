@@ -1,0 +1,206 @@
+# SPDX-License-Identifier: Apache-2.0
+# Licensed to the Ed-Fi Alliance under one or more agreements.
+# The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
+# See the LICENSE and NOTICES files in the project root for more information.
+
+# Ed-Fi API v8 pilot kit: smoke-test requests (Task 14, FR-TEST-1..3, 6..8). These are the same
+# interactions `smoke-test.sh`/`.ps1` run non-interactively; this file is for a person to run one
+# request at a time in VS Code with the "REST Client" extension and read the actual responses.
+#
+# Fill in @key and @secret below before running anything past the token request. Two ways:
+#
+#   1. File variables (quickest): open .runtime/bootstrap-credentials.json (written by `start` or
+#      `bootstrap` -- see bootstrap/README.md) and paste its "key" and "secret" fields into the two
+#      lines below.
+#   2. A REST Client environment (keeps secrets out of this file): add an environment in
+#      .vscode/settings.json's "rest-client.environmentVariables", for example
+#        { "$shared": { "key": "...", "secret": "..." } }
+#      then pick it from the REST Client status bar and leave @key/@secret blank -- {{key}}/{{secret}}
+#      resolve the same way either way. See
+#      https://github.com/Huachao/vscode-restclient/blob/master/README.md#environment-variables
+#
+# Every request below authenticates with the bootstrap (ADMIN) credential -- the only one that
+# already exists right after startup (FR-TEST-2). It is broad-access and not representative of a
+# participant integration credential (FR-BOOT-7/8); use `new-credential` (Task 13) to provision a
+# scoped credential for authorization testing.
+#
+# @baseUrl is the DMS route through NGINX (PUBLIC_ORIGIN + DMS_PATH_BASE in .env; adjust both if you
+# changed either from their defaults). The baseline education organization ids below are the single
+# source of truth in bootstrap/baseline-edorgs.json (FR-EDORG-14) -- see http/edorgs.http.
+
+@baseUrl = https://localhost/api
+@key =
+@secret =
+
+@seaId = 99
+@leaId = 9900
+@elementarySchoolId = 990001
+@middleSchoolId = 990002
+@highSchoolId = 990003
+
+# -------------------------------------------------------------------------------------------------
+# 1. Token (DMS proxies to CMS's /connect/token; spike-notes.md Q7). HTTP Basic auth: REST Client
+#    base64-encodes "Basic <username> <password>" itself, so {{key}}/{{secret}} are never hand-encoded.
+# -------------------------------------------------------------------------------------------------
+
+# @name token
+POST {{baseUrl}}/oauth/token
+Authorization: Basic {{key}} {{secret}}
+Content-Type: application/x-www-form-urlencoded
+
+grant_type=client_credentials
+
+# -------------------------------------------------------------------------------------------------
+# 2. Discovery (FR-FEAT-2, FR-TEST-1).
+# -------------------------------------------------------------------------------------------------
+
+### Discovery: the API root document
+GET {{baseUrl}}
+Authorization: Bearer {{token.response.body.access_token}}
+
+# -------------------------------------------------------------------------------------------------
+# 3. A descriptor read (FR-TEST-1). Descriptors are loaded on both templates, so this always returns
+#    rows, even on a freshly started minimal environment.
+# -------------------------------------------------------------------------------------------------
+
+### Descriptor list
+GET {{baseUrl}}/data/ed-fi/gradeLevelDescriptors?limit=5&totalCount=true
+Authorization: Bearer {{token.response.body.access_token}}
+
+# -------------------------------------------------------------------------------------------------
+# 4. Write and read-back (FR-TEST-1). FeederSchoolAssociation needs no descriptor and no student --
+#    just two schools that already exist in the baseline hierarchy -- so it is safe on a freshly
+#    bootstrapped minimal environment. Its natural key (schoolId + feederSchoolId + beginDate) is
+#    fixed, and DMS upserts on a matching natural key, so re-running this file returns 200 (not a
+#    duplicate) instead of failing on a second run.
+# -------------------------------------------------------------------------------------------------
+
+### Write: the middle school feeds into the high school
+# @name writeFeederSchool
+POST {{baseUrl}}/data/ed-fi/feederSchoolAssociations
+Authorization: Bearer {{token.response.body.access_token}}
+Content-Type: application/json
+
+{
+  "schoolReference": { "schoolId": {{highSchoolId}} },
+  "feederSchoolReference": { "schoolId": {{middleSchoolId}} },
+  "beginDate": "2024-08-01"
+}
+
+### Read-back, by the same natural key
+# @name readFeederSchool
+GET {{baseUrl}}/data/ed-fi/feederSchoolAssociations?schoolId={{highSchoolId}}&feederSchoolId={{middleSchoolId}}
+Authorization: Bearer {{token.response.body.access_token}}
+
+# -------------------------------------------------------------------------------------------------
+# 5. Full paged extract: limit/offset with totalCount (FR-FEAT-7, FR-TEST-6).
+# -------------------------------------------------------------------------------------------------
+
+### Paging: limit/offset, with Total-Count in the response headers
+# @name pageOne
+GET {{baseUrl}}/data/ed-fi/gradeLevelDescriptors?limit=5&offset=0&totalCount=true
+Authorization: Bearer {{token.response.body.access_token}}
+
+# -------------------------------------------------------------------------------------------------
+# 6. Cursor paging (FR-FEAT-8, FR-TEST-6). The first pageToken comes from the Next-Page-Token header
+#    on the limit= response above, or from GET .../partitions -- pageSize alone, with no token,
+#    returns 400 "PageToken is required when pageSize is specified." (spike-notes.md Q8).
+# -------------------------------------------------------------------------------------------------
+
+### Cursor paging: the next page, using the token from request 5's Next-Page-Token header
+GET {{baseUrl}}/data/ed-fi/gradeLevelDescriptors?pageSize=5&pageToken={{pageOne.response.headers.Next-Page-Token}}
+Authorization: Bearer {{token.response.body.access_token}}
+
+# -------------------------------------------------------------------------------------------------
+# 7. Incremental extract: change queries (FR-FEAT-4, FR-TEST-6). availableChangeVersions gives the
+#    window bounds; a minChangeVersion/maxChangeVersion query then extracts only what changed in it.
+# -------------------------------------------------------------------------------------------------
+
+### Change query: the available change-version window
+# @name changeVersions
+GET {{baseUrl}}/changeQueries/v1/availableChangeVersions
+Authorization: Bearer {{token.response.body.access_token}}
+
+### Change query: an incremental extract of that window
+GET {{baseUrl}}/data/ed-fi/gradeLevelDescriptors?minChangeVersion={{changeVersions.response.body.oldestChangeVersion}}&maxChangeVersion={{changeVersions.response.body.newestChangeVersion}}&totalCount=true
+Authorization: Bearer {{token.response.body.access_token}}
+
+# -------------------------------------------------------------------------------------------------
+# 8. ETag (FR-FEAT-6). If-Match with the current ETag succeeds (204, with a new ETag). Reusing that
+#    now-stale ETag on a second update returns 412 "Optimistic Lock Failed" (spike-notes.md Q8).
+# -------------------------------------------------------------------------------------------------
+
+### ETag: If-Match with the current ETag from request 4's read-back -- expect 204
+PUT {{baseUrl}}/data/ed-fi/feederSchoolAssociations/{{readFeederSchool.response.body.0.id}}
+Authorization: Bearer {{token.response.body.access_token}}
+Content-Type: application/json
+If-Match: "{{readFeederSchool.response.body.0._etag}}"
+
+{
+  "id": "{{readFeederSchool.response.body.0.id}}",
+  "schoolReference": { "schoolId": {{highSchoolId}} },
+  "feederSchoolReference": { "schoolId": {{middleSchoolId}} },
+  "beginDate": "2024-08-01",
+  "endDate": "2025-06-30"
+}
+
+### ETag: reusing the now-stale ETag from request 4 -- expect 412 Optimistic Lock Failed
+PUT {{baseUrl}}/data/ed-fi/feederSchoolAssociations/{{readFeederSchool.response.body.0.id}}
+Authorization: Bearer {{token.response.body.access_token}}
+Content-Type: application/json
+If-Match: "{{readFeederSchool.response.body.0._etag}}"
+
+{
+  "id": "{{readFeederSchool.response.body.0.id}}",
+  "schoolReference": { "schoolId": {{highSchoolId}} },
+  "feederSchoolReference": { "schoolId": {{middleSchoolId}} },
+  "beginDate": "2024-08-01",
+  "endDate": "2026-06-30"
+}
+
+# -------------------------------------------------------------------------------------------------
+# 9. A deliberately invalid request (FR-TEST-3): a school with no id, no category, and no grade
+#    levels. Expect 400 with a body listing each missing field.
+# -------------------------------------------------------------------------------------------------
+
+### Deliberately invalid: missing every required field on a school
+POST {{baseUrl}}/data/ed-fi/schools
+Authorization: Bearer {{token.response.body.access_token}}
+Content-Type: application/json
+
+{
+  "nameOfInstitution": "Missing required fields on purpose"
+}
+
+# -------------------------------------------------------------------------------------------------
+# 10. Assessment-style reference write (FR-TEST-7) -- REQUIRES THE POPULATED TEMPLATE.
+#
+# The bootstrap (ADMIN) credential used everywhere above is scoped only to SEA 99
+# (bootstrap/README.md), and EdFiSandbox reads people through RelationshipsWithEdOrgsAndPeople, so it
+# cannot list or resolve students outside its own hierarchy -- there is no request this file can run
+# with that credential to discover a real studentUniqueId from the populated sample data
+# (spike-notes.md Q7). To run this one for real:
+#
+#   1. Provision an assessment-shaped credential scoped to the sample LEA:
+#      `new-credential --shape assessment --edorg-ids 255901` (Task 13).
+#   2. Get a token for it (repeat request 1 above with that credential's key/secret instead of
+#      {{key}}/{{secret}}).
+#   3. GET {{baseUrl}}/data/ed-fi/students?limit=1 with that token to find a real studentUniqueId.
+#   4. Paste it in place of REPLACE-WITH-POPULATED-STUDENT-ID below.
+#
+# Left as-is, or run against the minimal template (which has no students at all), DMS returns
+# 400 or 409 naming the unresolved reference -- for example a message citing "StudentReference" or
+# "StudentUniqueId" -- rather than an ambiguous empty success (FR-TEST-8).
+# -------------------------------------------------------------------------------------------------
+
+### requires populated: enroll an existing student (by natural key) in a baseline school
+POST {{baseUrl}}/data/ed-fi/studentSchoolAssociations
+Authorization: Bearer {{token.response.body.access_token}}
+Content-Type: application/json
+
+{
+  "studentReference": { "studentUniqueId": "REPLACE-WITH-POPULATED-STUDENT-ID" },
+  "schoolReference": { "schoolId": {{elementarySchoolId}} },
+  "entryDate": "2024-08-01",
+  "entryGradeLevelDescriptor": "uri://ed-fi.org/GradeLevelDescriptor#Kindergarten"
+}
