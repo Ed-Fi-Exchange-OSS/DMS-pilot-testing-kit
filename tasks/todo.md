@@ -32,7 +32,17 @@ The sandbox still has no Docker daemon, so new work is drafted here and verified
 - Checkpoint C: passes on the host.
 - Tasks 12–14: implemented. On the host so far, `smoke-test.sh` passes in Git Bash; the other Phase 4
   checks (start/stop/reset/bootstrap, new-credential shapes, PowerShell, REST Client) are pending.
-- Next: finish the Phase 4 host checks (Checkpoint D), then Phase 5 (Tasks 15–17).
+- Task 16: done (2026-10-01). `ed-fi-api-v8/README.md` plus `docs/credentials-and-claim-sets.md` and
+  `docs/troubleshooting.md`; root `README.md` links to it. FR-DOC coverage checklist is under Task 16
+  below; the one real gap found (NFR-PERF-4) is fixed. `markdownlint-cli2` reports only the same
+  `MD013` line-length findings every other `.md` file in the repo already has. FR-DOC-7 (a fresh
+  reader following it on a clean host) still needs a human pass on a Docker host.
+- Task 15: the code looks done already (JSON `access.json` with a `correlation_id` field,
+  `DMS_LOG_LEVEL`/`CMS_LOG_LEVEL` wired into compose, bounded Docker log rotation) but its acceptance
+  criteria were never confirmed or checked off; needs a host pass, not new code.
+- Task 17: not started. No `.github/workflows/kit-smoke.yml` exists yet.
+- Next: finish the Phase 4 host checks (Checkpoint D) and Task 15's host verification, draft Task 17
+  (CI workflow), then Checkpoint E.
 
 ---
 
@@ -595,15 +605,56 @@ Cursor paging needs a first token from a `limit=` response's `Next-Page-Token` h
 Update the root `README.md` to link to it.
 
 **Acceptance criteria:**
-- [ ] Every FR-DOC item and every "Documentation SHALL" clause in the in-scope FRs is covered (a checklist lives in the PR)
-- [ ] markdownlint passes
+- [x] Every FR-DOC item and every "Documentation SHALL" clause in the in-scope FRs is covered (checklist below)
+- [x] markdownlint passes (no repo-wide `.markdownlint` config exists; `npx markdownlint-cli2` against
+      the new docs and every pre-existing kit/PRD `.md` file reports only `MD013` line-length, the
+      same as every other file already in the repo -- no structural issues)
 
 **Verification:**
-- [ ] A fresh reader follows it on a clean host for both templates (FR-DOC-7)
+- [ ] A fresh reader follows it on a clean host for both templates (FR-DOC-7) -- needs a Docker host;
+      not runnable from the sandbox
 
 **Dependencies:** Tasks 12–15, 18
 **Files likely touched:** `ed-fi-api-v8/README.md`, `ed-fi-api-v8/docs/*.md`, `README.md`
 **Estimated scope:** M
+
+### FR-DOC coverage checklist (2026-10-01)
+
+Every "Documentation SHALL"/"kit SHALL document" clause found in `docs/client-integration-pilot-PRD.md`
+for in-scope FRs, and where it's covered. Clauses under explicitly out-of-scope FRs (`FR-COMP-*`,
+`FR-MET-*`, the v7 halves of FR-BOOT-11/CLAIM-13/TEST-5/EDORG-15) are satisfied by stating the
+feature is out of scope, per `plan.md`, not by describing it as available.
+
+| Requirement | Covered in |
+| --- | --- |
+| FR-DOC-1..8 (prerequisites, ordered setup, no-prior-experience, URLs/creds, troubleshooting, feedback, FR-DOC-7 excepted, shapes table) | `ed-fi-api-v8/README.md`, all sections |
+| FR-LIFE-3 (one workflow, not two) | README Setup: "Bash and PowerShell commands behave identically" |
+| FR-LIFE-8 (startup prints URLs/template/next step) | README Setup step 3, quoted `start` output |
+| FR-TMPL-5 (template switch needs reset) | README "Stopping, resetting, and switching templates" |
+| FR-TMPL-6 (template per shape) | README "Which instructions apply to you" -- **note:** FR-TMPL-6's own text ("minimal ... for assessment") contradicts FR-TMPL-9 two bullets later ("assessment integrations need pre-existing students and education organizations to reference"); the kit follows FR-TMPL-9's reasoning (assessment → populated), which also matches the Phase 0 spike and the shipped `new-credential` defaults. This looks like a PRD drafting inconsistency, not a kit gap -- flagging for a human decision on which bullet is authoritative. |
+| FR-TMPL-8 (populated contents) | README "The populated template" |
+| FR-TMPL-10 (populated cost) | README "The populated template" |
+| FR-BOOT-7/8 (bootstrap credential labeled administrative, not for integration testing, permissions stated) | README "The bootstrap (admin) credential" |
+| FR-BOOT-13 (how to remove/disable it) | `docs/credentials-and-claim-sets.md` "Rotating or removing it" |
+| FR-CLAIM-11/12 (claim set per shape; DataWarehouse is a kit addition; feedback ask) | README "Which instructions apply to you", "The Data Warehouse claim set" |
+| FR-CLAIM-14 (reload endpoint) | README "Applying a claim set change immediately" |
+| FR-CRED-2 (secret non-recoverable) | README Setup step 4 |
+| FR-CRED-4 (how to change edorg association) | `docs/credentials-and-claim-sets.md` `--edorg-ids` reference |
+| FR-CRED-5 (how to get a token) | README Setup step 6; `http/smoke.http` |
+| FR-ROUTE-3 (cert trust per ecosystem) | README "Trusting the certificate from your own client code" |
+| FR-ROUTE-6/7 (`/data/v3` toggle and caveat) | README "URLs, routes, and default credentials" |
+| FR-EDORG-7 (baseline IDs listed) | README "The bootstrap (admin) credential"; `bootstrap/README.md` |
+| FR-EDORG-11/12/13 (edorgs.http needs the bootstrap credential; baseline already exists; likely-failure response) | `docs/credentials-and-claim-sets.md` "Smoke test and request files" |
+| NFR-SEC-1 (self-signed cert vs. production TLS) | README "Trusting the certificate..." intro line |
+| NFR-SEC-4/5 (local-dev-only labeling; network exposure) | README "URLs, routes, and default credentials" |
+| NFR-SEC-8 (bootstrap credential generated per-environment, documented as administrative) | README "The bootstrap (admin) credential"; Setup step 2 |
+| NFR-PRIV-1..4 (synthetic data only; logs may contain fragments; reset + log removal; populated template is synthetic) | README "Privacy" |
+| NFR-PERF-4 (single-host Compose isn't performance-representative) | README "The populated template", added 2026-10-01 -- **this was the one real gap found**; the first draft covered everything else but omitted this sentence entirely |
+| NFR-OBS-1 (where each service's logs live) | README "Logs" |
+| NFR-OBS-2 (PGAdmin preconfigured server) | README "Things worth knowing before you dig in"; `pgadmin/README.md` |
+
+Not documented, and not required to be (behavioral SHOULD, not a "documentation SHALL"): FR-ROUTE-9
+(503 on a downstream outage) -- worth a troubleshooting-doc sentence later but not a FR-DOC gap.
 
 ## Task 17: CI workflow
 
