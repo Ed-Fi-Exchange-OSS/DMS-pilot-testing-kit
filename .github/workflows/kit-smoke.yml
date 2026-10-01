@@ -3,8 +3,6 @@
 # The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 # See the LICENSE and NOTICES files in the project root for more information.
 
-# Task 17: CI for the Ed-Fi API v8 pilot kit (ed-fi-api-v8/).
-#
 # Requires ubuntu-latest specifically (not a hardened/SELinux runner, and not self-hosted): the
 # kit's lifecycle scripts run the tools container as `--user 0:0` so it can write bind-mounted
 # host directories (.runtime/, logs/). That works on rootful Docker Engine -- what ubuntu-latest

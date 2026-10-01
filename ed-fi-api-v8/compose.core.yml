@@ -102,7 +102,7 @@ services:
       AppSettings__CorrelationIdHeader: correlationid
       AppSettings__CorrelationIdMaxLength: "255"
       AppSettings__MaskRequestBodyInLogs: ${MASK_REQUEST_BODY_IN_LOGS:-true}
-      # Task 18 (FR-CLAIM-14): POST /${DMS_PATH_BASE}/management/reload-claimsets forces DMS to drop
+      # FR-CLAIM-14: POST /${DMS_PATH_BASE}/management/reload-claimsets forces DMS to drop
       # its up-to-10-minute claim-set cache (ClaimSetsCacheExpirationSeconds); GET .../view-claimsets
       # is mapped alongside it -- DMS gates both behind the same EnableManagementEndpoints switch, so
       # there is no way to enable one without the other. Both return 401/403 to any bearer that lacks

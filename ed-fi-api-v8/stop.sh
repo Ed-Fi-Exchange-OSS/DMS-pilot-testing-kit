@@ -4,7 +4,7 @@
 # The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 # See the LICENSE and NOTICES files in the project root for more information.
 
-# Task 12: stops the stack without touching any persisted data (FR-LIFE-5). Containers are stopped,
+# FR-LIFE-5: Stops the stack without touching any persisted data. Containers are stopped,
 # not removed, and volumes are untouched; ./start.sh starts the same containers again.
 
 set -euo pipefail

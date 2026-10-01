@@ -19,7 +19,7 @@
 # system-reserved -> fail; this script must never alter one of the 14 embedded claim sets
 # (FR-CLAIM-5..8).
 #
-# Task 18 (FR-CLAIM-14): after importing (new or changed), calls DMS's POST .../management/reload-
+# FR-CLAIM-14: after importing (new or changed), calls DMS's POST .../management/reload-
 # claimsets with the PilotKitAdmin token above so the change is usable at once instead of waiting up
 # to 10 minutes for DMS's cache. Skipped, with a log line, when DMS_CLAIMSET_RELOAD_ENABLED is not
 # true or DMS is not reachable (the normal case on a clean first start: this service runs before DMS

@@ -42,7 +42,7 @@ require_env "$STEP_ENV" \
     CMS_IDENTITY_ENCRYPTION_KEY HASH_ITERATIONS \
     POSTGRES_DB_NAME POSTGRES_PASSWORD CONFIG_BASE_URL
 
-# Task 18 (FR-CLAIM-14): the role PilotKitAdmin needs to call DMS's claim-set reload endpoint.
+# FR-CLAIM-14: the role PilotKitAdmin needs to call DMS's claim-set reload endpoint.
 # Defaulted here (not required-env) so this script still runs standalone against a stub.
 DMS_CLAIMSET_RELOAD_ROLE="${DMS_CLAIMSET_RELOAD_ROLE:-dms-management-operator}"
 

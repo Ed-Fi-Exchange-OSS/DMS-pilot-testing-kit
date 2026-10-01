@@ -4,7 +4,7 @@
 # The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 # See the LICENSE and NOTICES files in the project root for more information.
 
-# Task 12: reruns bootstrapping (the bootstrap credential and the baseline education organization
+# Reruns bootstrapping (the bootstrap credential and the baseline education organization
 # hierarchy, init/bootstrap.sh) against an already-running stack, without a destructive reset
 # (FR-BOOT-10). Useful to repair an environment where bootstrap-credentials.json was lost, or a
 # baseline record was deleted by hand.

@@ -4,7 +4,7 @@
 # The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 # See the LICENSE and NOTICES files in the project root for more information.
 
-# Task 12: the kit's explicit, clearly labelled destructive reset (FR-LIFE-6). Removes every
+# FR-LIFE-6: the kit's explicit, clearly labelled destructive reset. Removes every
 # persisted volume and the runtime credential files, then optionally starts the kit again fresh --
 # the supported way to switch DATABASE_TEMPLATE (FR-TMPL-5) or recover from a corrupted environment
 # (NFR-REL-5). Keeps .env and the TLS certificate: only data, not configuration, is destroyed.

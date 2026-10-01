@@ -155,7 +155,7 @@ services:
       # Direct, without the NGINX path base; the spike confirmed /connect/token answers here.
       CONFIG_BASE_URL: http://config:8081
       CLAIMSETS_DIR: /claimsets
-      # Task 18 (FR-CLAIM-14): after re-importing a changed claim set, call DMS's reload endpoint so
+      # FR-CLAIM-14: after re-importing a changed claim set, call DMS's reload endpoint so
       # it is usable immediately on a stack where DMS is already running. Direct URLs, without the
       # NGINX path base; DMS_BASE_URL matches DMS_PATH_BASE so the two never drift apart.
       DMS_CLAIMSET_RELOAD_ENABLED: ${DMS_CLAIMSET_RELOAD_ENABLED:-true}
