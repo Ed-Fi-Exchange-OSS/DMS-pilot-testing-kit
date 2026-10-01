@@ -4,7 +4,7 @@
 # The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 # See the LICENSE and NOTICES files in the project root for more information.
 
-# Task 12: starts the Ed-Fi API v8 pilot kit. A thin wrapper around `docker compose up`; the actual
+# Starts the Ed-Fi API v8 pilot kit. A thin wrapper around `docker compose up`; the actual
 # initialization work happens in the one-shot containers under init/ (compose.init.yml). See
 # scripts/lib.sh for the shared helpers this and its siblings (stop.sh, reset.sh, bootstrap.sh) use.
 
