@@ -383,6 +383,10 @@ start, about +140 MB of database size (about 194 MB total), and about +570 MB of
 disk (about 700 MB total for `db-data`). It contains **only the published Ed-Fi synthetic sample
 data** -- no real student records of any kind.
 
+These are single-host measurements, not a performance benchmark (NFR-PERF-4): a single-machine
+Compose environment is not a performance-representative deployment, so don't read throughput or
+timing claims into these numbers beyond "how long will my own first start take."
+
 ## Logs
 
 - **NGINX** writes one JSON object per request to `${LOG_DIR:-./logs}/nginx/access.json` (time,
