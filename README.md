@@ -6,10 +6,22 @@ Tools to assist with local pilot testing of the [Ed-Fi API
 v8](https://docs.ed-fi.org/reference/ed-fi-api/8/), aka "DMS".
 
 * [Client Integration Pilot Test Proposal](./docs/client-integration-pilot-test-proposal.md)
+* [Ed-Fi API v8 Pilot Testing Kit](./ed-fi-api-v8/README.md) -- the Docker Compose environment
+  itself: setup, credentials, and troubleshooting for pilot participants.
 
 > [!TIP]
 > For more information on the transition from the legacy Ed-Fi ODS/API to Ed-Fi
 > API v8+, see the [FAQ](https://docs.ed-fi.org/reference/roadmap/api-faq).
+
+## Pre-requisites
+
+* Docker Desktop (Podman and similar _might_ work but are untested)
+* Either Bash or PowerShell (both scripts tested in Windows environment running `amd64` containers)
+* Optional: a client capable of executing request in `.http` files:
+  * VS Code [rest-client extension](https://marketplace.visualstudio.com/items?itemName=humao.rest-client) (used / tested by the pilot kit developer)
+  * VS Code [httpYac extension](https://marketplace.visualstudio.com/items?itemName=anweber.vscode-httpyac)
+  * [Visual Studio 2022+](https://learn.microsoft.com/en-us/aspnet/core/test/http-files?view=aspnetcore-10.0)
+  * JetBrains IDEs using the [HTTP Client plugin](https://www.jetbrains.com/help/rider/Http_client_in__product__code_editor.html)
 
 ## Contributing
 
