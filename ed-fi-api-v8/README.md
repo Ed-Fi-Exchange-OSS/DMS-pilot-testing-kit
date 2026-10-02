@@ -314,6 +314,9 @@ scoping and no Create/Update/Delete. It's defined in version control at
 [`bootstrap/claimsets/DataWarehouse.json`](bootstrap/claimsets/DataWarehouse.json), reviewable like
 any other file in this repository.
 
+Use file [warehouse-claimset.http](./http/warehouse-claimset.http) to create and test a
+set of credentials using the `DataWarehouse` claimset.
+
 **This is a kit invention, not a standard Ed-Fi Alliance claim set.** The absence of a read-all
 claim set in the platform is itself one of the things this pilot can help confirm one way or the
 other -- if you have feedback on whether this claim set's shape matches what a real downstream
