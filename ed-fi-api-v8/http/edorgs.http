@@ -25,8 +25,8 @@
 # (FR-EDORG-6).
 
 @baseUrl = https://localhost/api
-@key =
-@secret =
+@key = {{DMS_BOOTSTRAP_KEY}}
+@secret = {{DMS_BOOTSTRAP_SECRET}}
 
 # Baseline identifiers (bootstrap/baseline-edorgs.json, FR-EDORG-7). Chosen not to collide with the
 # populated template's sample organizations -- LEA 255901, ESC 255950, post-secondary institution

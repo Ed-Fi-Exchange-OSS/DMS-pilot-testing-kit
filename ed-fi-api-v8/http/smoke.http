@@ -29,8 +29,8 @@
 # source of truth in bootstrap/baseline-edorgs.json (FR-EDORG-14) -- see http/edorgs.http.
 
 @baseUrl = https://localhost/api
-@key =
-@secret =
+@key = {{DMS_BOOTSTRAP_KEY}}
+@secret = {{DMS_BOOTSTRAP_SECRET}}
 
 @seaId = 99
 @leaId = 9900
@@ -56,7 +56,6 @@ grant_type=client_credentials
 
 ### Discovery: the API root document
 GET {{baseUrl}}
-Authorization: Bearer {{token.response.body.access_token}}
 
 # -------------------------------------------------------------------------------------------------
 # 3. A descriptor read (FR-TEST-1). Descriptors are loaded on both templates, so this always returns
