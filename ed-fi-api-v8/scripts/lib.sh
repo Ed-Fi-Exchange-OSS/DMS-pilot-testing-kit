@@ -132,14 +132,21 @@ _KIT_LOWER='abcdefghijklmnopqrstuvwxyz'
 _KIT_UPPER='ABCDEFGHIJKLMNOPQRSTUVWXYZ'
 _KIT_DIGIT='0123456789'
 # No '$': Compose interpolates it in .env values, which would corrupt the secret.
-_KIT_SPECIAL_FULL='!@#%^&*()-_=+[]{}:;,.?'
+# No '&' or '=': CMS_ADMIN_CLIENT_SECRET (and the other CMS_*_CLIENT_SECRET values generated from
+# this pool) is embedded unescaped into application/x-www-form-urlencoded request bodies built by
+# naive string concatenation -- see http/claimset-test.http's
+# "grant_type=client_credentials&client_id=...&client_secret={{CMS_ADMIN_CLIENT_SECRET}}&scope=..."
+# line, where the VS Code REST Client extension substitutes the placeholder as literal text without
+# urlencoding it. A literal '&' in the secret would be read as a field separator, and a literal '='
+# would make everything after it in that chunk part of the wrong field, corrupting the request.
+_KIT_SPECIAL_FULL='!@#%^*()-_+[]{}:;,.?'
 # Same set without ';'. POSTGRES_PASSWORD is embedded, unescaped, into semicolon-delimited
 # ADO.NET/Npgsql-style connection strings elsewhere in the kit (compose.core.yml
 # DatabaseSettings__DatabaseConnection and DATABASE_CONNECTION_STRING_ADMIN, and the connection
 # string init/datastore.sh registers with CMS); a literal ';' in the password would truncate or
 # corrupt those. PGADMIN_DEFAULT_PASSWORD and CMS_DATABASE_ENCRYPTION_KEY use the same safe pool
 # out of caution, even though neither is known to need it today.
-_KIT_SPECIAL_SAFE='!@#%^&*()-_=+[]{}:,.?'
+_KIT_SPECIAL_SAFE='!@#%^*()-_+[]{}:,.?'
 
 # _kit_random_from_pool <pool> <count> -- <count> characters drawn from <pool> using OpenSSL's CSPRNG
 # (one openssl invocation for the whole batch, not per character). Uniformity has a slight bias from
