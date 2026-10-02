@@ -1,0 +1,58 @@
+# SPDX-License-Identifier: Apache-2.0
+# Licensed to the Ed-Fi Alliance under one or more agreements.
+# The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
+# See the LICENSE and NOTICES files in the project root for more information.
+
+# Creates and tests client credentials using the warehouse claimset
+
+@baseUrlApi = https://localhost/api
+@baseUrlConfig = https://localhost/config
+
+### Authenticate with bootstrap credentials
+# @name bootstrapToken
+POST {{baseUrlConfig}}/connect/token
+Content-Type: application/x-www-form-urlencoded
+
+grant_type=client_credentials&client_id=PilotKitAdmin&client_secret={{CMS_ADMIN_CLIENT_SECRET}}&scope=edfi_admin_api/full_access
+
+### Create a new application and credentials
+# @name application
+POST {{baseUrlConfig}}/v3/applications
+Authorization: Bearer {{bootstrapToken.response.body.access_token}}
+Content-Type: application/json
+
+{
+    "applicationName": "Data Warehouse",
+    "vendorId": 2,
+    "claimSetName": "DataWarehouse",
+    "educationOrganizationIds": [
+        99
+    ],
+    "dataStoreIds": [
+        1
+    ],
+    "enabled": true
+}
+
+### Authenticate with DMS using warehouse claimset client
+# @name warehouseToken
+POST {{baseUrlApi}}/oauth/token
+Authorization: Basic {{application.response.body.key}} {{application.response.body.secret}}
+Content-Type: application/x-www-form-urlencoded
+
+grant_type=client_credentials
+&client_id={{application.response.body.key}}
+&client_secret={{application.response.body.secret}}
+
+### Get all students, with total count header
+GET {{baseUrlApi}}/data/ed-fi/students?totalCount=true
+Authorization: Bearer {{warehouseToken.response.body.access_token}}
+
+### Retrieve the apiClientId to use below in resetting the credentials
+# @name apiClientId
+GET {{baseUrlConfig}}/v3/apiClients?applicationId={{application.response.body.id}}
+Authorization: Bearer {{bootstrapToken.response.body.access_token}}
+
+### Reset credentials so that you can copy and use elsewhere
+PUT {{baseUrlConfig}}/v3/apiClients/{{apiClientId.response.body.$[0].id}}/reset-credential
+Authorization: Bearer {{bootstrapToken.response.body.access_token}}
