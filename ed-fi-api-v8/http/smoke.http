@@ -187,19 +187,41 @@ Content-Type: application/json
 #   3. GET {{baseUrl}}/data/ed-fi/students?limit=1 with that token to find a real studentUniqueId.
 #   4. Paste it in place of REPLACE-WITH-POPULATED-STUDENT-ID below.
 #
+# AssessmentVendor can write assessments and studentAssessments in its vendor's namespaces, but
+# cannot read schools or write enrollments (studentSchoolAssociations). So the example first
+# creates an assessment, then records a result for the existing student, reported at sample school
+# 255901001 under LEA 255901 (spike-notes.md Q9). Both POSTs are upserts, so re-running is safe.
+#
 # Left as-is, or run against the minimal template (which has no students at all), DMS returns
 # 400 or 409 naming the unresolved reference -- for example a message citing "StudentReference" or
 # "StudentUniqueId" -- rather than an ambiguous empty success (FR-TEST-8).
 # -------------------------------------------------------------------------------------------------
 
-### requires populated: enroll an existing student (by natural key) in a baseline school
-POST {{baseUrl}}/data/ed-fi/studentSchoolAssociations
+### requires populated: an assessment in the vendor's namespace
+POST {{baseUrl}}/data/ed-fi/assessments
 Authorization: Bearer {{token.response.body.access_token}}
 Content-Type: application/json
 
 {
+  "assessmentIdentifier": "pilot-kit-example",
+  "namespace": "uri://gbisd.edu/pilot-kit-example",
+  "assessmentTitle": "Pilot Kit Example Assessment",
+  "academicSubjects": [
+    { "academicSubjectDescriptor": "uri://ed-fi.org/AcademicSubjectDescriptor#English Language Arts" }
+  ]
+}
+
+### requires populated: a result for an existing student (by natural key) at a sample school
+POST {{baseUrl}}/data/ed-fi/studentAssessments
+Authorization: Bearer {{token.response.body.access_token}}
+Content-Type: application/json
+
+{
+  "studentAssessmentIdentifier": "pilot-kit-example",
   "studentReference": { "studentUniqueId": "REPLACE-WITH-POPULATED-STUDENT-ID" },
-  "schoolReference": { "schoolId": {{elementarySchoolId}} },
-  "entryDate": "2024-08-01",
-  "entryGradeLevelDescriptor": "uri://ed-fi.org/GradeLevelDescriptor#Kindergarten"
+  "assessmentReference": {
+    "assessmentIdentifier": "pilot-kit-example",
+    "namespace": "uri://gbisd.edu/pilot-kit-example"
+  },
+  "reportedSchoolReference": { "schoolId": 255901001 }
 }

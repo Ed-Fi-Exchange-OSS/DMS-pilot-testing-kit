@@ -45,6 +45,8 @@ CRED_FILE="$RUNTIME_DIR/bootstrap-credentials.json"
 EDORGS_HTTP_FILE="${EDORGS_HTTP_FILE:-/http/edorgs.http}"
 SMOKE_BASE="${INGRESS_BASE_URL}/${DMS_PATH_BASE}"
 POPULATED_SEED_EDORG_IDS="${POPULATED_SEED_EDORG_IDS:-255901,255950,6000203,19255901}"
+# A sample school under the first LEA above (spike-notes.md Q9, "Sample education organizations").
+POPULATED_SAMPLE_SCHOOL_ID="${POPULATED_SAMPLE_SCHOOL_ID:-255901001}"
 
 [ -r "$INGRESS_CA_FILE" ] || die smoke-test "$INGRESS_CA_FILE not found or not readable"
 
@@ -375,8 +377,26 @@ else
     # AssessmentVendor credential -- exactly what new-credential --shape assessment (Task 13) would
     # create -- against the sample LEA, uses it once, then deletes it again.
     _assess_edorg_id=$(printf '%s' "$POPULATED_SEED_EDORG_IDS" | cut -d, -f1)
+    _assess_school_id="$POPULATED_SAMPLE_SCHOOL_ID"
     _assess_name="Pilot Kit Smoke Test (Assessment)"
+    # Must start with one of the vendor's namespace prefixes (cms_ensure_vendor below):
+    # assessment metadata is authorized NamespaceBased.
+    _assess_namespace="uri://gbisd.edu/pilot-kit-smoke-test"
+    _assessment_id=""
+    _student_assessment_id=""
     _assess_ok=false
+
+    # assess_delete <resource> <id> -> best-effort DELETE of a record this step wrote; warns on
+    # failure. Does nothing if the POST returned no Location id.
+    assess_delete() {
+        [ -n "$2" ] || return 0
+        http_request DELETE "$SMOKE_BASE/data/ed-fi/$1/$2" \
+            --header "Authorization: Bearer $_assess_token"
+        case "$RESP_STATUS" in
+            2??) ;;
+            *) log assessment-write "WARNING: could not delete $1/$2 (HTTP $RESP_STATUS)" ;;
+        esac
+    }
     _admin_token=$(cms_token assessment-write PilotKitAdmin "$CMS_ADMIN_CLIENT_SECRET" \
         edfi_admin_api/full_access 2>"$WORK_DIR/assess-token.err") || {
         record_fail assessment-write \
@@ -416,38 +436,62 @@ else
             _student_id=$(jq -r '.[0].studentUniqueId // empty' "$RESP_BODY_FILE" 2>/dev/null)
 
             if [ "$RESP_STATUS" = "200" ] && [ -n "$_student_id" ]; then
-                http_request GET \
-                    "$SMOKE_BASE/data/ed-fi/schools?localEducationAgencyId=$_assess_edorg_id&limit=1" \
-                    --header "Authorization: Bearer $_assess_token"
-                _school_id=$(jq -r '.[0].schoolId // empty' "$RESP_BODY_FILE" 2>/dev/null)
+                # AssessmentVendor has full access to assessment metadata (assessments,
+                # studentAssessments) in its vendor's namespaces, but cannot read schools or write
+                # enrollments. So the step writes what an assessment vendor actually writes: its own
+                # assessment, then a studentAssessment for the existing student, reported at the
+                # known sample school (checked against the credential's LEA by DMS).
+                _assessment_body=$(jq -n --arg namespace "$_assess_namespace" \
+                    '{assessmentIdentifier: "pilot-kit-smoke-test", namespace: $namespace,
+                      assessmentTitle: "Pilot Kit Smoke Test",
+                      academicSubjects: [{academicSubjectDescriptor:
+                        "uri://ed-fi.org/AcademicSubjectDescriptor#English Language Arts"}]}')
+                http_request POST "$SMOKE_BASE/data/ed-fi/assessments" \
+                    --header "Authorization: Bearer $_assess_token" \
+                    --header "Content-Type: application/json" --data "$_assessment_body"
+                _assessment_id=$(resp_header Location | sed 's|.*/||')
 
-                if [ "$RESP_STATUS" = "200" ] && [ -n "$_school_id" ]; then
-                    _ssa_body=$(jq -n \
-                        --arg studentUniqueId "$_student_id" \
-                        --argjson schoolId "$_school_id" \
-                        '{studentReference: {studentUniqueId: $studentUniqueId},
-                          schoolReference: {schoolId: $schoolId}, entryDate: "2024-08-01",
-                          entryGradeLevelDescriptor: "uri://ed-fi.org/GradeLevelDescriptor#Kindergarten"}')
-                    http_request POST "$SMOKE_BASE/data/ed-fi/studentSchoolAssociations" \
-                        --header "Authorization: Bearer $_assess_token" \
-                        --header "Content-Type: application/json" --data "$_ssa_body"
-                    case "$RESP_STATUS" in
-                        200 | 201)
-                            record_pass assessment-write \
-                                "wrote studentSchoolAssociations for an existing student ($_student_id)" \
-                                "and school ($_school_id) it did not create"
-                            _assess_ok=true
-                            ;;
-                        *)
-                            record_fail assessment-write \
-                                "POST studentSchoolAssociations returned HTTP $RESP_STATUS:" \
-                                "$(cat "$RESP_BODY_FILE")"
-                            ;;
-                    esac
-                else
-                    record_fail assessment-write \
-                        "could not find a sample school under LEA $_assess_edorg_id (HTTP $RESP_STATUS)"
-                fi
+                case "$RESP_STATUS" in
+                    200 | 201)
+                        _student_assessment_body=$(jq -n \
+                            --arg studentUniqueId "$_student_id" \
+                            --arg namespace "$_assess_namespace" \
+                            --argjson schoolId "$_assess_school_id" \
+                            '{studentAssessmentIdentifier: "pilot-kit-smoke-test",
+                              studentReference: {studentUniqueId: $studentUniqueId},
+                              assessmentReference: {assessmentIdentifier: "pilot-kit-smoke-test",
+                                namespace: $namespace},
+                              reportedSchoolReference: {schoolId: $schoolId}}')
+                        http_request POST "$SMOKE_BASE/data/ed-fi/studentAssessments" \
+                            --header "Authorization: Bearer $_assess_token" \
+                            --header "Content-Type: application/json" \
+                            --data "$_student_assessment_body"
+                        _student_assessment_id=$(resp_header Location | sed 's|.*/||')
+                        case "$RESP_STATUS" in
+                            200 | 201)
+                                record_pass assessment-write \
+                                    "wrote studentAssessments for an existing student" \
+                                    "($_student_id) at school $_assess_school_id, neither created" \
+                                    "by this step"
+                                _assess_ok=true
+                                ;;
+                            *)
+                                record_fail assessment-write \
+                                    "POST studentAssessments returned HTTP $RESP_STATUS:" \
+                                    "$(cat "$RESP_BODY_FILE")"
+                                ;;
+                        esac
+                        ;;
+                    *)
+                        record_fail assessment-write \
+                            "POST assessments returned HTTP $RESP_STATUS: $(cat "$RESP_BODY_FILE")"
+                        ;;
+                esac
+
+                # Leave the sample data as it was: the studentAssessment first, as it references
+                # the assessment.
+                assess_delete studentAssessments "$_student_assessment_id"
+                assess_delete assessments "$_assessment_id"
             else
                 record_fail assessment-write \
                     "could not find a sample student under LEA $_assess_edorg_id (HTTP $RESP_STATUS)"
