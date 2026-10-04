@@ -44,13 +44,47 @@ jobs:
 
   psscriptanalyzer:
     name: PSScriptAnalyzer
-    # Deliberately pinned to @main rather than a SHA to always use the latest version of this
-    # reusable workflow that we maintain
-    uses: ed-fi-alliance-oss/ed-fi-actions/.github/workflows/powershell-analyzer.yml@main
-    permissions:
-      security-events: write
-      actions: read
-      contents: read
+    runs-on: ubuntu-latest
+    # Deliberately NOT calling the reusable *workflow*
+    # (ed-fi-alliance-oss/ed-fi-actions/.github/workflows/powershell-analyzer.yml@main) here. That
+    # workflow checks out the repo under review into a testing-repo/ subdirectory, then calls
+    # github/codeql-action/upload-sarif with no checkout_path override, so upload-sarif looks for a
+    # git repo at $GITHUB_WORKSPACE itself (which has none -- only the checked-out subdirectories
+    # do) and falls back to the raw GITHUB_SHA/GITHUB_REF env vars. For a pull_request event those
+    # point at the ephemeral refs/pull/<N>/merge ref, not refs/pull/<N>/head -- confirmed on this
+    # repo's own PR #5: the alerts really were uploaded (22 results, queryable at
+    # `GET /code-scanning/alerts?ref=refs/pull/5/merge`), but neither the PR's checks view nor the
+    # repo's Security tab ever show them, since both query refs/pull/5/head and the default branch
+    # respectively. That's a bug in the upstream workflow, not something this job's inputs can work
+    # around.
+    #
+    # So this job calls the underlying `powershell-analyzer` Docker *action* directly instead --
+    # same analysis, same checkout shape -- and stops after producing results.sarif rather than
+    # feeding it to a SARIF upload step that can't currently land anywhere a human would see it.
+    # Revisit once the upstream workflow fixes its checkout_path/ref handling.
+    steps:
+      - name: Checkout the Actions repo
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          repository: Ed-Fi-Alliance-OSS/Ed-Fi-Actions
+          path: Ed-Fi-Actions
+
+      - name: Checkout the repo to review
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          path: testing-repo
+
+      - name: Analyze
+        uses: ./Ed-Fi-Actions/powershell-analyzer
+        with:
+          directory: ./testing-repo/
+
+      - name: Upload SARIF as artifact
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: psscriptanalyzer-sarif
+          path: ./results.sarif
+          retention-days: 10
 
   kit-smoke-minimal:
     name: Kit smoke test (minimal template)

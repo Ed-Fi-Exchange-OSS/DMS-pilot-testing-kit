@@ -65,6 +65,8 @@ function Write-KitWarn {
 }
 
 function Stop-KitWithError {
+    [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSUseShouldProcessForStateChangingFunctions', '',
+        Justification = 'Only writes to stderr and exits; the Stop- verb triggers this rule but no state is mutated.')]
     param([Parameter(Mandatory)][string] $Message)
     [Console]::Error.WriteLine("ERROR: $Message")
     exit 1
@@ -148,9 +150,9 @@ function Get-KitEnvValue {
     $file = Get-KitEnvFile
     if (-not (Test-Path -LiteralPath $file)) { return $Default }
     $pattern = '^' + [regex]::Escape($Name) + '='
-    $matches = Select-String -LiteralPath $file -Pattern $pattern
-    if (-not $matches) { return $Default }
-    $line = ($matches | Select-Object -Last 1).Line
+    $envLines = Select-String -LiteralPath $file -Pattern $pattern
+    if (-not $envLines) { return $Default }
+    $line = ($envLines | Select-Object -Last 1).Line
     return $line.Substring($Name.Length + 1)
 }
 
@@ -158,6 +160,8 @@ function Get-KitEnvValue {
 # line untouched, including any '=' inside other values) or appends X=Y if absent. Requires .env to
 # already exist.
 function Set-KitEnvValue {
+    [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSUseShouldProcessForStateChangingFunctions', '',
+        Justification = 'Always called unconditionally by the kit''s own non-interactive scripts, never interactively, so there is no caller that would want to preview or skip the .env write with -WhatIf/-Confirm.')]
     param([Parameter(Mandatory)][string] $Name, [Parameter(Mandatory)][string] $Value)
     $file = Get-KitEnvFile
     if (-not (Test-Path -LiteralPath $file)) {
@@ -251,6 +255,8 @@ function Invoke-KitShuffleString {
 # KEY=VALUE, "key:secret", "client_secret=value"), but a value that could be mistaken for a flag by
 # some future consumer is a cheap footgun to remove at generation time.
 function Remove-KitLeadingDash {
+    [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSUseShouldProcessForStateChangingFunctions', '',
+        Justification = 'Pure string manipulation that returns a possibly-rearranged string; the Remove- verb triggers this rule but nothing is mutated.')]
     param([Parameter(Mandatory)][string] $Value)
     if ($Value.Length -gt 1 -and $Value[0] -eq '-') {
         $chars = $Value.ToCharArray()
@@ -264,6 +270,8 @@ function Remove-KitLeadingDash {
 }
 
 function New-KitSecret {
+    [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSUseShouldProcessForStateChangingFunctions', '',
+        Justification = 'Pure in-memory random-string generator with no side effects; the New- verb triggers this rule but nothing external changes.')]
     param(
         [Parameter(Mandatory)][int] $Length,
         [ValidateSet('full', 'safe')][string] $Pool = 'full'
@@ -277,6 +285,8 @@ function New-KitSecret {
 }
 
 function New-KitBase64Key {
+    [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSUseShouldProcessForStateChangingFunctions', '',
+        Justification = 'Pure in-memory generator of random bytes encoded as base64, with no side effects; same false positive as New-KitSecret.')]
     param([int] $Bytes = 32)
     $rng = [System.Security.Cryptography.RandomNumberGenerator]::Create()
     try {

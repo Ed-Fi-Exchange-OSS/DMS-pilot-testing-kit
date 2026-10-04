@@ -41,7 +41,14 @@ $crt = Join-Path $sslDir 'server.crt'
 $key = Join-Path $sslDir 'server.key'
 $days = 365
 
-function Stop-WithError([string] $Message) {
+function Stop-WithError {
+    # Attribute placement note: a PowerShell function-level attribute can only precede an explicit
+    # param() block, not an inline parenthesized parameter list, so the single $Message parameter is
+    # declared here instead of inline -- purely to give the suppression attribute somewhere valid to
+    # attach; behavior is unchanged.
+    [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSUseShouldProcessForStateChangingFunctions', '',
+        Justification = 'Only writes to stderr and exits; the Stop- verb triggers this rule but no state is mutated.')]
+    param([string] $Message)
     [Console]::Error.WriteLine("ERROR: $Message")
     exit 1
 }
@@ -60,6 +67,12 @@ function Write-PemFile([string] $Path, [string] $Label, [byte[]] $Data) {
 }
 
 function New-WithOpenSsl {
+    # Empty param() block exists only so the suppression attribute below has a valid attachment
+    # point (PowerShell requires an explicit param() for a function-level attribute); this function
+    # takes no parameters.
+    [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSUseShouldProcessForStateChangingFunctions', '',
+        Justification = 'Writes a temp OpenSSL config and the cert/key files, but is called unconditionally once per script run; the existing-file check and -Force gate are already handled by the caller before this runs, so there is no scenario where a caller wants to preview or skip it.')]
+    param()
     # Same config as generate-certificate.sh.
     $config = @'
 [req]
@@ -90,6 +103,12 @@ authorityKeyIdentifier = keyid:always
 }
 
 function New-WithDotNet {
+    # Empty param() block exists only so the suppression attribute below has a valid attachment
+    # point (PowerShell requires an explicit param() for a function-level attribute); this function
+    # takes no parameters.
+    [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSUseShouldProcessForStateChangingFunctions', '',
+        Justification = 'Genuinely writes the cert/key files via .NET APIs, but is called unconditionally once per script run with the existing-file/-Force gate already handled by the caller, so there is no preview/skip use case.')]
+    param()
     $rsa = [RSA]::Create(2048)
     try {
         $request = [CertificateRequest]::new(
