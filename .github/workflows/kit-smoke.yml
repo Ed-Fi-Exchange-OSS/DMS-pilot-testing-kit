@@ -3,30 +3,17 @@
 # The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 # See the LICENSE and NOTICES files in the project root for more information.
 
-# Requires ubuntu-latest specifically (not a hardened/SELinux runner, and not self-hosted): the
-# kit's lifecycle scripts run the tools container as `--user 0:0` so it can write bind-mounted
-# host directories (.runtime/, logs/). That works on rootful Docker Engine -- what ubuntu-latest
-# ships -- but not under userns-remap, and SELinux in enforcing mode (Fedora/RHEL-family hosts)
-# blocks the bind mounts outright unless they carry a `:z`/`:Z` label the kit does not set. See
-# tasks/todo.md Task 17's "Linux notes" for the source of this constraint.
-#
-# All of shellcheck, pwsh, Docker Engine, and Docker Compose v2 are preinstalled on ubuntu-latest
-# runner images, so neither lint job needs an install step.
-
 name: Ed-Fi API v8 kit smoke test
 
 on:
   pull_request:
     branches:
       - main
-    # Scoped to the kit and this workflow file: every script this workflow lints or runs lives
-    # under ed-fi-api-v8/, so a PR that never touches it has nothing here to check.
     paths:
       - 'ed-fi-api-v8/**'
       - '.github/workflows/kit-smoke.yml'
   schedule:
-    # 06:17 UTC daily. A populated-template run (see the job below): off-peak, and offset from the
-    # hour so it doesn't line up with everyone else's :00 cron jobs.
+    # 06:17 UTC daily
     - cron: '17 6 * * *'
   workflow_dispatch:
 
@@ -40,18 +27,6 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
-      # Three separate invocations, each run from the directory its scripts expect:
-      #   - the host wrappers and scripts/lib.sh use `# shellcheck source=` directives resolved
-      #     against the *working directory*, not the checked file's own directory, so this must
-      #     run from ed-fi-api-v8/ (confirmed empirically: running from the repo root leaves every
-      #     `. "$SCRIPT_DIR/scripts/lib.sh"` unresolved, SC1091).
-      #   - init/lib.sh (sourced by every init/*.sh container script) has no shebang of its own --
-      #     by design, since it is never executed directly, only sourced -- so shellcheck can't
-      #     infer its dialect and errors with SC2148 unless told. `--shell=sh` supplies that for
-      #     the whole init/ directory; every other file there already has its own `#!/bin/sh`
-      #     shebang, so the flag is a no-op for them. This is a workflow-only workaround, not a fix
-      #     to init/lib.sh itself -- see this task's final report for why it isn't fixed here.
-      #   - tools/ and nginx/entrypoint.d/ scripts source nothing, so they need neither.
       - name: shellcheck - host scripts
         working-directory: ed-fi-api-v8
         run: >
@@ -69,17 +44,9 @@ jobs:
 
   psscriptanalyzer:
     name: PSScriptAnalyzer
-    # The Ed-Fi Alliance's own reusable workflow: checks out this repo plus
-    # Ed-Fi-Alliance-OSS/Ed-Fi-Actions, then runs its powershell-analyzer Docker action (which
-    # bundles PSScriptAnalyzer itself, so this job needs no PowerShell module install step) over
-    # the whole repository -- every .ps1 file in this repo lives under ed-fi-api-v8/, so this
-    # covers them all. Pinned to @main: an accepted, standing exception to this repo's
-    # pin-to-SHA convention, matching how on-pullrequest.yml already references
-    # ed-fi-alliance-oss/ed-fi-actions/.github/workflows/repository-scanner.yml@main.
+    # Deliberately pinned to @main rather than a SHA to always use the latest version of this
+    # reusable workflow that we maintain
     uses: ed-fi-alliance-oss/ed-fi-actions/.github/workflows/powershell-analyzer.yml@main
-    # Unlike repository-scanner.yml, this reusable workflow uploads its SARIF results to code
-    # scanning, which needs security-events: write -- a reusable workflow's own permissions are
-    # capped to what its caller grants, and the top-level read-all on this file doesn't cover it.
     permissions:
       security-events: write
       actions: read
@@ -98,17 +65,9 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
-      # start.sh also generates ssl/server.{crt,key} itself if missing, and would do so here too;
-      # this step runs it explicitly first so certificate-generation failures are reported as their
-      # own step rather than folded into "start.sh failed", per Task 17's description.
       - name: Generate the TLS certificate
         run: ./ed-fi-api-v8/ssl/generate-certificate.sh
 
-      # start.sh creates .env from .env.example itself, with freshly generated local secrets, the
-      # first time it runs -- see ed-fi-api-v8/scripts/lib.sh's kit_ensure_env. The workflow
-      # deliberately does not pre-copy .env.example to .env: doing so would leave the published
-      # placeholder secrets in .env instead of generated ones, which start.sh only replaces when it
-      # creates the file itself (it never overwrites an existing .env).
       - name: Start the kit (minimal template)
         run: ./ed-fi-api-v8/start.sh --template minimal
 
@@ -133,16 +92,13 @@ jobs:
           if-no-files-found: warn
           retention-days: 14
 
-      # The kit's own supported teardown (docker compose down -v --remove-orphans, plus clearing
-      # .runtime/), exercised here rather than a bare `docker compose down` so this job also
-      # catches a reset.sh regression. The runner is thrown away after the job regardless, so this
-      # mainly guards against port/volume name collisions if a future change reuses the runner.
       - name: Tear down the stack
         if: always()
         run: ./ed-fi-api-v8/reset.sh --force
 
   kit-smoke-populated:
     name: Kit smoke test (populated template)
+    # This is an expensive job - do not run it on every pull request
     if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
     # Budget: the README/spike-notes measure a clean populated `up` at about 200s (around 3.3
