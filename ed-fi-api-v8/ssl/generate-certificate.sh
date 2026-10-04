@@ -41,8 +41,8 @@ crt="$ssl_dir/server.crt"
 key="$ssl_dir/server.key"
 days=365
 
-if [ "$force" != true ] && { [ -e "$crt" ] || [ -e "$key" ]; }; then
-    fail "server.crt or server.key already exists in $ssl_dir. Run again with --force to replace them."
+if [ "$force" != true ] && [ -e "$crt" ] && [ -e "$key" ]; then
+    fail "server.crt and server.key already exist in $ssl_dir. Run again with --force to replace them."
 fi
 
 command -v openssl >/dev/null 2>&1 ||

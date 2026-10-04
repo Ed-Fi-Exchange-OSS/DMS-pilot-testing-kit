@@ -53,9 +53,9 @@ Notes:
   intentional here. The stock `default.conf` serves `/usr/share/nginx/html` on port 80.
 - `wget` in the health check is BusyBox `wget` in the alpine image. For a Debian-based NGINX image,
   use `curl -fsS http://127.0.0.1/ >/dev/null` instead.
-- `index.html` loads `swagger-ui-dist` from unpkg.com, without Subresource Integrity, so the browser
-  needs internet access. This is a known limitation until the files are vendored or a published
-  Swagger UI image replaces them.
+- `index.html` loads `swagger-ui-dist` from unpkg.com with pinned Subresource Integrity hashes, so
+  the browser needs internet access. This is a known limitation until the files are vendored or a
+  published Swagger UI image replaces them.
 
 ## Ingress requirements (NGINX `default.conf.template`)
 

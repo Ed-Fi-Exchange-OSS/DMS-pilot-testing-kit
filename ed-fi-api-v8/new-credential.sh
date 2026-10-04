@@ -108,7 +108,7 @@ fi
 
 if [ -n "$EDORG_IDS" ]; then
     case "$EDORG_IDS" in
-        *[!0-9,]*)
+        *[!0-9,]* | ,* | *, | *,,*)
             echo "--edorg-ids must be a comma-separated list of numbers (got '$EDORG_IDS')" >&2
             exit 1
             ;;

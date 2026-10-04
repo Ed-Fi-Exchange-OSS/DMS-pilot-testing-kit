@@ -30,11 +30,17 @@ using namespace System.Security.Cryptography.X509Certificates
 #>
 [CmdletBinding()]
 param(
-    [switch] $Force
+    [switch] $Force,
+    [switch] $Help
 )
 
 $ErrorActionPreference = 'Stop'
 Set-StrictMode -Version Latest
+
+if ($Help) {
+    Get-Help -Full $PSCommandPath
+    exit 0
+}
 
 $sslDir = $PSScriptRoot
 $crt = Join-Path $sslDir 'server.crt'
