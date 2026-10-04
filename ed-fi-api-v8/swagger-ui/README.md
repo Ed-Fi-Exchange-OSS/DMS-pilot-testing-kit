@@ -20,6 +20,12 @@ researched and may replace this directory later.
   forwarded headers aren't honored. If its path is under `DMS_BASE_PATH`, the origin is replaced
   with the page's origin. This replaces the original's `ed-fi-api-config` → `localhost` rewrite.
   The helpers live in `edfi-common-helper.js` (`dmsUrl`, `dmsTokenUrl`, `toSameOrigin`).
+- **`pageSize` starts empty.** DMS gives the `pageSize` query parameter a default of 500, so
+  "Try it out" pre-filled it, but DMS rejects `pageSize` without `pageToken` (400 `PageToken is
+  required when pageSize is specified.`). Every GET collection request therefore failed until
+  the user cleared the field. The `pageSizeWithoutDefaultPlugin` in `swagger-initializer.js`
+  removes the default and adds a note to the parameter's description. Remove the plugin once
+  DMS stops advertising the default ([DMS-1588](https://edfi.atlassian.net/browse/DMS-1588)).
 - Everything else is unchanged: custom fields, custom domains, route-context plugins, and the
   single-operation grouping. The tenant and route-qualifier logic stays but is inert, because the
   kit uses neither.

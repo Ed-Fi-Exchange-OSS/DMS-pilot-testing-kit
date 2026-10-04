@@ -152,11 +152,92 @@ window.onload = function () {
         };
     }
 
+    // DMS advertises a default of 500 for the pageSize query parameter, so "Try it out" pre-fills
+    // it. But DMS rejects pageSize without pageToken (400 "PageToken is required when pageSize is
+    // specified."), so every GET failed until the user cleared the field. Drop the default so the
+    // field starts empty, and say why in its description. Remove once DMS-1588 is fixed upstream.
+    function pageSizeWithoutDefaultPlugin() {
+        const operationMethods = new Set(['delete', 'get', 'head', 'options', 'patch', 'post', 'put', 'trace']);
+        const note = 'Only valid together with pageToken; for the first page, use limit or leave this empty.';
+
+        const fixParameter = (parameter) => {
+            if (!parameter || typeof parameter !== 'object' || parameter.name !== 'pageSize' || parameter.in !== 'query') {
+                return;
+            }
+            delete parameter.default;
+            delete parameter.example;
+            if (parameter.schema && typeof parameter.schema === 'object') {
+                delete parameter.schema.default;
+                delete parameter.schema.example;
+            }
+            if (!(parameter.description || '').includes(note)) {
+                parameter.description = parameter.description ? `${parameter.description} ${note}` : note;
+            }
+        };
+
+        const fixParameters = (parameters) => {
+            if (Array.isArray(parameters)) {
+                parameters.forEach(fixParameter);
+            }
+        };
+
+        const removePageSizeDefault = (specification) => {
+            if (!specification || typeof specification !== 'object') {
+                return specification;
+            }
+
+            // Shared parameters referenced with $ref (OpenAPI 3 components, or Swagger 2 parameters).
+            const shared = (specification.components && specification.components.parameters) || specification.parameters;
+            if (shared && typeof shared === 'object' && !Array.isArray(shared)) {
+                Object.values(shared).forEach(fixParameter);
+            }
+
+            Object.values(specification.paths || {}).forEach((pathItem) => {
+                if (!pathItem || typeof pathItem !== 'object') {
+                    return;
+                }
+                fixParameters(pathItem.parameters);
+                Object.entries(pathItem).forEach(([method, operation]) => {
+                    if (operationMethods.has(method.toLowerCase()) && operation && typeof operation === 'object') {
+                        fixParameters(operation.parameters);
+                    }
+                });
+            });
+
+            return specification;
+        };
+
+        return {
+            statePlugins: {
+                spec: {
+                    wrapActions: {
+                        updateSpec: (oriAction) => (...args) => {
+                            let specification = args[0];
+                            const originalWasString = typeof specification === 'string';
+
+                            if (originalWasString) {
+                                try {
+                                    specification = JSON.parse(specification);
+                                } catch (error) {
+                                    return oriAction(...args);
+                                }
+                            }
+
+                            specification = removePageSizeDefault(specification);
+                            args[0] = originalWasString ? JSON.stringify(specification) : specification;
+                            return oriAction(...args);
+                        },
+                    },
+                },
+            },
+        };
+    }
+
     // Configuration for Ed-Fi Custom Domains plugin from environment variable
     const enableCustomDomains = (window.DMS_SWAGGER_UI_ENABLE_CUSTOM_DOMAINS || "true") === "true";
 
     // Configure plugins based on settings
-    const plugins = [sameOriginPlugin, singleOperationGroupPlugin, window.EdFiCustomFields];
+    const plugins = [sameOriginPlugin, singleOperationGroupPlugin, pageSizeWithoutDefaultPlugin, window.EdFiCustomFields];
     if (enableCustomDomains && window.EdFiCustomDomains) {
         plugins.push(window.EdFiCustomDomains);
         console.log('Ed-Fi Custom Domains plugin enabled');
