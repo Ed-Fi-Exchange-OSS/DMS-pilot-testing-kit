@@ -25,6 +25,10 @@
 #   5. offset/limit paging (FR-FEAT-7)     10. assessment-style write -- populated only (FR-TEST-7/8)
 # Plus two ingress-level checks: the /data/v3 rewrite (Task 6) and the HTTP-to-HTTPS redirect
 # (Task 5), both best-effort from inside the Compose network.
+#
+# SMOKE_TEST_DEBUG=1 (set by smoke-test.sh --debug / smoke-test.ps1 -DebugCredentials) prints every
+# client key/secret pair this script reads or creates, as "[debug] <step>: key=... secret=...", to
+# help diagnose authorization failures. Off by default; the output contains live secrets.
 
 set -u
 
@@ -43,6 +47,22 @@ SMOKE_BASE="${INGRESS_BASE_URL}/${DMS_PATH_BASE}"
 POPULATED_SEED_EDORG_IDS="${POPULATED_SEED_EDORG_IDS:-255901,255950,6000203,19255901}"
 
 [ -r "$INGRESS_CA_FILE" ] || die smoke-test "$INGRESS_CA_FILE not found or not readable"
+
+case "${SMOKE_TEST_DEBUG:-0}" in
+    1 | true | TRUE | yes | YES) SMOKE_TEST_DEBUG=1 ;;
+    *) SMOKE_TEST_DEBUG=0 ;;
+esac
+
+# debug_credential <step> <key> <secret> -> prints the pair, only when SMOKE_TEST_DEBUG=1.
+debug_credential() {
+    [ "$SMOKE_TEST_DEBUG" = "1" ] || return 0
+    log debug "$1: key=$2 secret=$3"
+}
+
+if [ "$SMOKE_TEST_DEBUG" = "1" ]; then
+    log debug "WARNING: debug is on -- client secrets will be printed below. This output is" \
+        "sensitive: do not share it, paste it into tickets or chats, or commit it."
+fi
 
 WORK_DIR=$(mktemp -d "${TMPDIR:-/tmp}/smoke-test.XXXXXX")
 # shellcheck disable=SC2329,SC2317  # invoked by the trap below
@@ -144,6 +164,7 @@ BOOT_SECRET=$(jq -r '.secret // empty' "$CRED_FILE" 2>/dev/null)
 if [ -z "$BOOT_KEY" ] || [ -z "$BOOT_SECRET" ]; then
     die bootstrap-credential "$CRED_FILE is missing key or secret -- run start (or bootstrap) again"
 fi
+debug_credential bootstrap-credential "$BOOT_KEY" "$BOOT_SECRET"
 
 http_request POST "$SMOKE_BASE/oauth/token" \
     --user "${BOOT_KEY}:${BOOT_SECRET}" --data-urlencode "grant_type=client_credentials"
@@ -382,6 +403,8 @@ else
         _assess_key="$CMS_APPLICATION_KEY"
         _assess_secret="$CMS_APPLICATION_SECRET"
         _assess_app_id="$CMS_APPLICATION_ID"
+        debug_credential "assessment-write ($_assess_name, AssessmentVendor)" \
+            "$_assess_key" "$_assess_secret"
 
         http_request POST "$SMOKE_BASE/oauth/token" \
             --user "${_assess_key}:${_assess_secret}" --data-urlencode "grant_type=client_credentials"

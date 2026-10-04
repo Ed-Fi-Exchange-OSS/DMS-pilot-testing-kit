@@ -218,6 +218,10 @@ deliberately invalid request, and -- only on the populated template -- an assess
 reference write. Prints one PASS/FAIL/SKIP line per step and a summary, and exits non-zero if
 anything failed.
 
+To diagnose an authorization failure (for example a `403` in the assessment step), add `--debug`
+(Bash) or `-DebugCredentials` (PowerShell) to print each client key and secret the test uses.
+**This prints live secrets**, so don't share or paste the output.
+
 ### 6. Make your first authenticated request
 
 Use the `Token URL` and your new credential's key/secret from step 4, or open

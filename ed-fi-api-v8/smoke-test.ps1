@@ -14,7 +14,8 @@
         docker compose run --rm --no-deps --user 0:0 tools sh /init/smoke-test.sh
     --no-deps so a stopped stack fails with "run start first" instead of being started. The tools
     service mounts http/ read-only for the edorgs.http consistency check (FR-EDORG-14). This
-    script's exit code is the container's.
+    script's exit code is the container's. -DebugCredentials is passed in as SMOKE_TEST_DEBUG=1
+    (docker compose run -e).
 
     Exercises the same requests http/smoke.http documents: a token, Discovery, a descriptor read, a
     write and read-back, offset/limit and cursor paging, a change-query extract, an ETag update plus
@@ -26,16 +27,27 @@
     Only run the http/edorgs.http vs bootstrap/baseline-edorgs.json consistency check (FR-EDORG-14)
     and exit -- skips every DMS/NGINX request.
 
+.PARAMETER DebugCredentials
+    Print each client key/secret pair the smoke test reads or creates, to help diagnose
+    authorization failures. WARNING: this prints live secrets; do not share the output. Named this
+    way because -Debug is a PowerShell common parameter (added by [CmdletBinding()]) with its own
+    meaning, so it can't be redefined here.
+
 .EXAMPLE
     ./smoke-test.ps1
 
 .EXAMPLE
     ./smoke-test.ps1 -CheckEdorgsOnly
+
+.EXAMPLE
+    ./smoke-test.ps1 -DebugCredentials
 #>
 
 [CmdletBinding()]
 param(
     [switch]$CheckEdorgsOnly,
+
+    [switch]$DebugCredentials,
 
     [Alias('h')]
     [switch]$Help
@@ -78,7 +90,9 @@ try {
         exit 1
     }
 
-    docker compose run --rm --no-deps --user 0:0 tools sh /init/smoke-test.sh
+    $debugFlag = if ($DebugCredentials) { '1' } else { '0' }
+    docker compose run --rm --no-deps --user 0:0 -e "SMOKE_TEST_DEBUG=$debugFlag" tools `
+        sh /init/smoke-test.sh
     exit $LASTEXITCODE
 }
 finally {
