@@ -7,11 +7,12 @@ window.EdFiCustomDomains = function () {
 
     const safeGet = window.EdfiCommonHelper.safeGet;
 
-    // Process spec only once
+    // The spec the domain maps were built from. Selecting another definition in the top bar
+    // loads a new spec object, so the maps are rebuilt whenever this no longer matches.
+    let processedSpec = null;
+
+    // Process each loaded spec once
     const processSpecOnce = (system) => {
-        if (window.__edfiSpecProcessed) {
-            return;
-        }
         if (!system || !system.getSystem) {
             return;
         }
@@ -19,7 +20,7 @@ window.EdFiCustomDomains = function () {
         try {
             const specSelectors = system.getSystem().specSelectors;
             const spec = specSelectors && specSelectors.spec();
-            if (!spec) {
+            if (!spec || spec === processedSpec) {
                 return;
             }
 
@@ -54,7 +55,7 @@ window.EdFiCustomDomains = function () {
                 });
             }
 
-            window.__edfiSpecProcessed = true;
+            processedSpec = spec;
 
         } catch (err) {
             console.warn("Error processing spec:", err);
