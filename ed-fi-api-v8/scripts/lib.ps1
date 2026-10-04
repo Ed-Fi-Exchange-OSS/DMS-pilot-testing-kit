@@ -145,6 +145,9 @@ function Invoke-KitCompose {
 # a string array, for callers that need to parse the result (`ps`, `exec ... psql`).
 # Simple function for the same reason as Invoke-KitCompose above.
 function Get-KitComposeOutput {
+    # 2>$null still turns each stderr line into an ErrorRecord first, which Windows PowerShell 5.1
+    # makes terminating under a caller's 'Stop' (see Invoke-KitComposeTee below).
+    $ErrorActionPreference = 'Continue'
     Push-Location $script:KitDir
     try {
         & docker compose @args 2>$null

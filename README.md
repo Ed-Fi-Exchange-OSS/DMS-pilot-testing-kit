@@ -16,7 +16,8 @@ v8](https://docs.ed-fi.org/reference/ed-fi-api/8/), aka "DMS".
 ## Pre-requisites
 
 * Docker Desktop (Podman and similar _might_ work but are untested)
-* Either Bash or PowerShell (both scripts tested in Windows environment running `amd64` containers)
+* Either Bash or PowerShell Core (both scripts tested in Windows environment running `amd64` containers)
+  * _Should_ also work in PowerShell 5, but that has not been tested.
 * Optional: a client capable of executing request in `.http` files:
   * VS Code [rest-client extension](https://marketplace.visualstudio.com/items?itemName=humao.rest-client) (used / tested by the pilot kit developer)
   * VS Code [httpYac extension](https://marketplace.visualstudio.com/items?itemName=anweber.vscode-httpyac)
