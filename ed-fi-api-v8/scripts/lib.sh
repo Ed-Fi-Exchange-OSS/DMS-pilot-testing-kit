@@ -15,7 +15,7 @@
 #                                     location -- independent of the caller's working directory
 #   kit_log / kit_warn / kit_die     stdout / stderr(WARNING) / stderr(ERROR)+exit 1
 #   kit_require_docker                docker on PATH and the daemon reachable, else kit_die
-#   kit_require_compose               Compose v2 available, else kit_die
+#   kit_require_compose               Compose 2.20+ available, else kit_die
 #   kit_compose <args...>            runs `docker compose <args...>` from KIT_DIR (never --env-file:
 #                                     the included compose files read ./.env themselves)
 #   kit_env_get <NAME> [default]     read a value from .env (or the default if unset/absent)
@@ -71,10 +71,26 @@ kit_require_docker() {
             "(or the Docker daemon) and try again."
 }
 
+# compose.yml uses top-level `include`, which needs Compose 2.20 or later.
 kit_require_compose() {
-    docker compose version >/dev/null 2>&1 ||
+    local version major minor
+    version=$(docker compose version --short 2>/dev/null) ||
         kit_die "Docker Compose v2 was not found (docker compose version failed). Update Docker" \
             "Desktop, or install the compose-plugin: https://docs.docker.com/compose/install/"
+    # --short prints e.g. 2.29.7, v2.20.0, or 2.40.3-desktop.1.
+    version=${version#v}
+    major=${version%%.*}
+    minor=${version#*.}
+    minor=${minor%%[!0-9]*}
+    if ! [[ "$major" =~ ^[0-9]+$ && "$minor" =~ ^[0-9]+$ ]]; then
+        kit_warn "Could not read the Docker Compose version ('$version'); this kit needs 2.20" \
+            "or later."
+        return 0
+    fi
+    if ((major < 2 || (major == 2 && minor < 20))); then
+        kit_die "Docker Compose $version is too old; this kit needs 2.20 or later. Update Docker" \
+            "Desktop, or install the compose-plugin: https://docs.docker.com/compose/install/"
+    fi
 }
 
 # ----------------------------------------------------------------------------------------------

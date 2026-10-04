@@ -12,7 +12,7 @@
     one-shot containers under init/ (compose.init.yml). Same parameters and observable behavior as
     start.sh (FR-LIFE-2/3).
 
-    1. Checks that Docker is running and Compose v2 is available.
+    1. Checks that Docker is running and Compose 2.20 or later is available.
     2. Creates .env from .env.example with freshly generated local secrets, if .env doesn't exist
        yet (an existing .env is never modified; missing variables are only reported).
     3. Generates a local, self-signed TLS certificate under ssl/, if one doesn't exist yet.

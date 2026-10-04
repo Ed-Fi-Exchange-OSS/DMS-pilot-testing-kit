@@ -45,8 +45,8 @@ If you want the rationale behind how the kit is built rather than how to use it,
 ## Prerequisites
 
 - **Docker and Compose.** Docker Desktop (Windows or macOS) or Docker Engine (Linux), with
-  Compose v2 (`docker compose version` must succeed). This kit was verified with Docker Desktop
-  29.7.2.
+  Compose 2.20 or later (check with `docker compose version`). This kit was verified with Docker
+  Desktop 29.7.2.
 - **Free host ports**, all configurable in `.env` if they're already taken on your machine:
   - `80` (`HTTP_PORT`) -- redirects to HTTPS
   - `443` (`HTTPS_PORT`) -- the kit's HTTPS ingress
@@ -125,10 +125,10 @@ replaces `POSTGRES_PASSWORD`, `CMS_SERVICE_CLIENT_SECRET`, `CMS_READONLY_CLIENT_
 .\start.ps1
 ```
 
-This checks that Docker is running and Compose v2 is available, creates `.env` if it doesn't exist
-(with generated secrets, as above), generates the TLS certificate if missing, creates `.runtime/`
-and the log directory, and runs `docker compose up -d --build --wait`. **The first run can take a
-few minutes**: pulling images, building the `tools` image, provisioning the database schema, and
+This checks that Docker is running and Compose 2.20 or later is available, creates `.env` if it
+doesn't exist (with generated secrets, as above), generates the TLS certificate if missing, creates
+`.runtime/` and the log directory, and runs `docker compose up -d --build --wait`. **The first run
+can take a few minutes**: pulling images, building the `tools` image, provisioning the database schema, and
 loading the starting template all happen before the command returns. On the `populated` template,
 budget an extra ~5 minutes for the sample data load (see
 [The populated template](#the-populated-template)).

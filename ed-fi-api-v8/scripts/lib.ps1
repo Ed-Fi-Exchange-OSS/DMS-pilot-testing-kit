@@ -19,7 +19,7 @@ Public API (everything else here is a private helper, prefixed with an underscor
     Write-KitLog / Write-KitWarn         plain / "WARNING: " prefixed, to the console
     Stop-KitWithError                    "ERROR: " prefixed to stderr, then exit 1
     Assert-KitDockerRunning              docker on PATH and the daemon reachable, else fatal
-    Assert-KitComposeAvailable           Compose v2 available, else fatal
+    Assert-KitComposeAvailable           Compose 2.20+ available, else fatal
     Invoke-KitCompose <args...>          runs `docker compose <args...>` from $KitDir, streaming
                                           output to the console; sets $LASTEXITCODE
     Get-KitComposeOutput <args...>       same, but captures and returns stdout instead of streaming
@@ -88,10 +88,25 @@ function Assert-KitDockerRunning {
     }
 }
 
+# compose.yml uses top-level `include`, which needs Compose 2.20 or later.
 function Assert-KitComposeAvailable {
-    & docker compose version *>$null
+    $version = & docker compose version --short 2>$null
     if ($LASTEXITCODE -ne 0) {
         Stop-KitWithError ('Docker Compose v2 was not found (docker compose version failed). ' +
+            'Update Docker Desktop, or install the compose plugin: ' +
+            'https://docs.docker.com/compose/install/')
+    }
+    # --short prints e.g. 2.29.7, v2.20.0, or 2.40.3-desktop.1.
+    $version = "$version".Trim()
+    if ($version -notmatch '^v?(\d+)\.(\d+)') {
+        Write-KitWarn ("Could not read the Docker Compose version ('$version'); " +
+            'this kit needs 2.20 or later.')
+        return
+    }
+    $major = [int]$Matches[1]
+    $minor = [int]$Matches[2]
+    if ($major -lt 2 -or ($major -eq 2 -and $minor -lt 20)) {
+        Stop-KitWithError ("Docker Compose $version is too old; this kit needs 2.20 or later. " +
             'Update Docker Desktop, or install the compose plugin: ' +
             'https://docs.docker.com/compose/install/')
     }
