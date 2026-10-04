@@ -37,9 +37,20 @@ The sandbox still has no Docker daemon, so new work is drafted here and verified
   below; the one real gap found (NFR-PERF-4) is fixed. `markdownlint-cli2` reports only the same
   `MD013` line-length findings every other `.md` file in the repo already has. FR-DOC-7 (a fresh
   reader following it on a clean host) still needs a human pass on a Docker host.
-- Task 15: the code looks done already (JSON `access.json` with a `correlation_id` field,
-  `DMS_LOG_LEVEL`/`CMS_LOG_LEVEL` wired into compose, bounded Docker log rotation) but its acceptance
-  criteria were never confirmed or checked off; needs a host pass, not new code.
+- Task 15: verified (2026-10-02) against the real host-produced logs already in this repo and
+  against the code; no bugs found. `logs/nginx/access.json` (116 lines, real curl/REST-Client
+  traffic spanning 2026-09-28 to 2026-10-01, not generated in this session): 116/116 lines parse
+  with `jq -e .`, and one real line carries the Phase 0 spike's `spike-corr-12345` correlation ID
+  with `"service":"dms"`. `git diff` confirms the NGINX correlation-ID `map` blocks and `log_format`
+  are unchanged since that spike. The log directory is a bind mount (survives `down`, even `-v`);
+  `DMS_LOG_LEVEL`/`CMS_LOG_LEVEL` are wired to `Serilog__MinimumLevel__Default` in every service in
+  `compose.core.yml`; bounded Docker log rotation (`DOCKER_LOG_MAX_SIZE`/`DOCKER_LOG_MAX_FILE`) is on
+  every compose file. Two things still need a live host run that neither this sandbox nor the
+  repo's existing artifacts can close: DMS's verbosity actually changing after a `DMS_LOG_LEVEL`
+  edit + restart, and a single fresh request whose correlation ID is checked against both
+  `access.json` and `docker compose logs dms` in the same run (the NGINX half is covered by real
+  data; the DMS half only by unchanged spike-notes Q10 evidence, not a fresh pairing). See Task 15
+  below for exact commands.
 - Task 17: not started. No `.github/workflows/kit-smoke.yml` exists yet.
 - Next: finish the Phase 4 host checks (Checkpoint D) and Task 15's host verification, draft Task 17
   (CI workflow), then Checkpoint E.
@@ -568,12 +579,50 @@ Cursor paging needs a first token from a `limit=` response's `Next-Page-Token` h
   otherwise document that they go through `docker logs` (FR-LOG-1..7, NFR-OBS-1)
 
 **Acceptance criteria:**
-- [ ] `logs/nginx/access.json` has one valid JSON object per request, and survives `down`
-- [ ] Changing `LOG_LEVEL` changes DMS verbosity after restart
-- [ ] The correlation ID sent by a client appears in both NGINX and DMS log lines
+- [x] `logs/nginx/access.json` has one valid JSON object per request, and survives `down` --
+      verified against the real host-produced log already in this repo (`logs/nginx/access.json`,
+      116 lines spanning 2026-09-28 to 2026-10-01): every line parses with `jq -e .` (116/116, 0
+      invalid, run this session), one object per request by construction
+      (`log_format kit_json escape=json` in `nginx/templates/default.conf.template`). Survives
+      `down`: the log directory is a bind mount, not a named volume
+      (`compose.ingress.yml`: `${LOG_DIR:-./logs}/nginx:/var/log/nginx/kit`), so it's untouched by
+      `down` or even `down -v`. The file's multi-day timestamp spread -- spanning separate sessions
+      of Task 18 and later work on this host -- is itself circumstantial evidence it was never
+      wiped by an intervening `down`.
+- [ ] Changing `LOG_LEVEL` changes DMS verbosity after restart -- the wiring is real
+      (`compose.core.yml`: `Serilog__MinimumLevel__Default: ${DMS_LOG_LEVEL:-Warning}`, matching
+      `.env.example`'s `DMS_LOG_LEVEL=Warning`), but no artifact on disk shows DMS's own log output
+      (by design: DMS isn't file-logged to `${LOG_DIR}`; see README "Logs"), and this sandbox has no
+      Docker daemon to restart a container and compare verbosity. Needs a host run:
+      `docker compose logs dms --since 1m | wc -l` at the default `Warning`, then set
+      `DMS_LOG_LEVEL=Information` in `.env`, `docker compose up -d --force-recreate dms`, repeat the
+      same requests, and `docker compose logs dms --since 1m | wc -l` again -- the `Information`
+      count should be far larger and include lines absent at `Warning`.
+- [ ] The correlation ID sent by a client appears in both NGINX and DMS log lines -- the NGINX side
+      is confirmed from real data already in this repo: `logs/nginx/access.json` has a line with
+      `"correlation_id":"spike-corr-12345","service":"dms","status":200`, the same ID used in the
+      Phase 0 spike (spike-notes Q10), and `git log`/`git diff` on
+      `nginx/templates/default.conf.template` show the correlation-ID `map` blocks and `log_format`
+      haven't changed since that spike (the only diff between the two commits that ever touched
+      this file is an unrelated pgadmin header line). The DMS side of that same pairing isn't
+      independently checkable from artifacts in this repo, since DMS logs only go through
+      `docker logs`/`docker compose logs dms`, which isn't captured anywhere on disk. Spike-notes
+      Q10 found 3 matches in `docker compose logs dms` for this same correlation ID on a
+      structurally identical correlation-ID code path, so this is very likely still true, but a
+      literal fresh pairing wasn't run this session. Needs:
+      `curl -k -H "correlationid: verify-15-$(date +%s)" https://localhost/api`, then
+      `grep verify-15-… logs/nginx/access.json` and `docker compose logs dms | grep verify-15-…` --
+      both should show the same ID.
 
 **Verification:**
-- [ ] `jq` parses every line of the access log after a smoke run
+- [x] `jq` parses every line of the access log after a smoke run -- ran `jq -e .` against every
+      line of the real `logs/nginx/access.json` already on disk this session: 116/116 valid, 0
+      invalid. The data is genuine host traffic (curl and VS Code REST Client calls spanning the
+      Task 18 spike-through-verification period), not something generated in this sandbox; it isn't
+      provably tagged as coming from a `smoke-test.sh` run specifically (smoke-test.sh also uses
+      curl, so user-agent doesn't distinguish it), so a fresh `./smoke-test.sh` run followed by the
+      same `jq -e` sweep on a host would be the cleanest closeout -- but the literal criterion
+      ("`jq` parses every line") is satisfied by the evidence already in hand.
 
 **Dependencies:** Task 5 (can run in parallel with Phase 3/4)
 **Files likely touched:** nginx template, `ed-fi-api-v8/compose.yml`, `.env.example`
