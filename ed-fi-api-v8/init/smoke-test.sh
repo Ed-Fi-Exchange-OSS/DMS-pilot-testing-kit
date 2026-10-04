@@ -45,7 +45,7 @@ POPULATED_SEED_EDORG_IDS="${POPULATED_SEED_EDORG_IDS:-255901,255950,6000203,1925
 [ -r "$INGRESS_CA_FILE" ] || die smoke-test "$INGRESS_CA_FILE not found or not readable"
 
 WORK_DIR=$(mktemp -d "${TMPDIR:-/tmp}/smoke-test.XXXXXX")
-# shellcheck disable=SC2329  # invoked by the trap below
+# shellcheck disable=SC2329,SC2317  # invoked by the trap below
 cleanup() {
     rm -rf "$WORK_DIR"
 }
@@ -141,8 +141,9 @@ fi
     "$CRED_FILE is not readable by UID $(id -u); run this through smoke-test.sh or .ps1 (--user 0:0)"
 BOOT_KEY=$(jq -r '.key // empty' "$CRED_FILE" 2>/dev/null)
 BOOT_SECRET=$(jq -r '.secret // empty' "$CRED_FILE" 2>/dev/null)
-[ -n "$BOOT_KEY" ] && [ -n "$BOOT_SECRET" ] \
-    || die bootstrap-credential "$CRED_FILE is missing key or secret -- run start (or bootstrap) again"
+if [ -z "$BOOT_KEY" ] || [ -z "$BOOT_SECRET" ]; then
+    die bootstrap-credential "$CRED_FILE is missing key or secret -- run start (or bootstrap) again"
+fi
 
 http_request POST "$SMOKE_BASE/oauth/token" \
     --user "${BOOT_KEY}:${BOOT_SECRET}" --data-urlencode "grant_type=client_credentials"

@@ -131,8 +131,9 @@ if [ -n "$EDORG_IDS_ARG" ]; then
     EDORG_IDS_JSON_ARG=$(printf '%s' "$EDORG_IDS_ARG" | jq -R -c '
         split(",") | map(gsub("^[[:space:]]+|[[:space:]]+$";"")) | map(select(length > 0) | tonumber)
     ' 2>/dev/null) || EDORG_IDS_JSON_ARG=""
-    [ -n "$EDORG_IDS_JSON_ARG" ] && [ "$EDORG_IDS_JSON_ARG" != "[]" ] \
-        || die "$STEP_ARGS" "--edorg-ids must be a comma-separated list of numbers (got '$EDORG_IDS_ARG')"
+    if [ -z "$EDORG_IDS_JSON_ARG" ] || [ "$EDORG_IDS_JSON_ARG" = "[]" ]; then
+        die "$STEP_ARGS" "--edorg-ids must be a comma-separated list of numbers (got '$EDORG_IDS_ARG')"
+    fi
 fi
 
 require_env "$STEP_ARGS" \

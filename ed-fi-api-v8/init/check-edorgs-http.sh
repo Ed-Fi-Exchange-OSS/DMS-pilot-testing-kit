@@ -246,7 +246,7 @@ while [ "$_b" -le "$BLOCK_COUNT" ]; do
         _extra_resource=$(cat "$WORK_DIR/block-$_b.resource")
         log "$STEP" \
             "EXTRA: a $_extra_resource request in $EDORGS_HTTP_FILE matches no entry in $BASELINE_FILE" \
-            "($(cat "$WORK_DIR/block-$_b.json" | jq -c .))"
+            "($(jq -c . "$WORK_DIR/block-$_b.json"))"
         FAILURES=$((FAILURES + 1))
     fi
     _b=$((_b + 1))
