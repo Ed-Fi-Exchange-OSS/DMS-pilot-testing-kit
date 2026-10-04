@@ -38,9 +38,9 @@ Options:
   --help                        Show this help and exit.
 
 On success, prints the kit's URLs, the template actually in use, and the bootstrap credentials
-file path. On failure, names the service(s) that failed, shows their recent logs, prints the exact
-`docker compose logs <service>` command, and exits non-zero. Running ./start.sh again against an
-already-running stack exits 0 and makes no changes.
+file path. On failure, shows Compose's own error, names the service(s) that failed, shows their
+recent logs, prints the exact `docker compose logs <service>` command, and exits non-zero.
+Running ./start.sh again against an already-running stack exits 0 and makes no changes.
 EOF
 }
 
@@ -97,21 +97,14 @@ kit_log "Starting the stack (docker compose up -d --build --wait)."
 kit_log "This can take a few minutes on first run: image pulls, the tools image build, schema"
 kit_log "provisioning, and the template load all happen before this command returns."
 
-if ! kit_compose up -d --build --wait; then
-    kit_log ""
-    kit_log "Startup did not complete. Checking service status..."
-    failures=$(kit_compose_failures || true)
-    if [ -n "$failures" ]; then
-        while IFS="$(printf '\t')" read -r svc reason; do
-            [ -n "$svc" ] || continue
-            kit_log "FAILED: $svc ($reason)"
-            kit_show_failure_logs "$svc"
-        done <<<"$failures"
-    else
-        kit_log "No individual service was reported as exited or unhealthy. Inspect further with:"
-        kit_log "  (cd \"$KIT_DIR\" && docker compose ps -a)"
-        kit_log "  (cd \"$KIT_DIR\" && docker compose logs)"
-    fi
+# Compose's own `--wait` error (for example "container ... has no healthcheck configured") is often
+# the only statement of what went wrong, so its output is captured, as well as streamed, for the
+# failure report.
+up_log=$(mktemp "${TMPDIR:-/tmp}/kit-up.XXXXXX")
+trap 'rm -f "$up_log"' EXIT
+
+if ! kit_compose_tee "$up_log" up -d --build --wait; then
+    kit_show_up_failure "$up_log"
     exit 1
 fi
 

@@ -18,6 +18,8 @@
 #   kit_require_compose               Compose 2.20+ available, else kit_die
 #   kit_compose <args...>            runs `docker compose <args...>` from KIT_DIR (never --env-file:
 #                                     the included compose files read ./.env themselves)
+#   kit_compose_tee <file> <args...> same, streaming stdout+stderr live while also copying them to
+#                                     <file>; returns Compose's own exit status
 #   kit_env_get <NAME> [default]     read a value from .env (or the default if unset/absent)
 #   kit_env_has <NAME>               true if NAME= appears in .env
 #   kit_env_set <NAME> <VALUE>       replace or append NAME=VALUE in .env
@@ -32,9 +34,16 @@
 #                                     .env value, and never prints a secret value.
 #   kit_ensure_certs                 generate ssl/server.{crt,key} if either is missing
 #   kit_ensure_dirs                  create .runtime/ and ${LOG_DIR:-./logs}/nginx
-#   kit_compose_failures             one "service<TAB>reason" line per exited(non-zero)/unhealthy
-#                                     container, from `docker compose ps -a --format json`
+#   kit_compose_failures [up-output-file]
+#                                     one "service<TAB>reason" line per failing service: those
+#                                     named in Compose's `up --wait` errors in <up-output-file>
+#                                     first, then any unhealthy, exited(non-zero), never-started, or
+#                                     suspect one-shot init- container from `docker compose ps -a`
 #   kit_show_failure_logs <service>  last 20 lines of the service's logs, plus the full-log command
+#   kit_show_up_failure <up-output-file>
+#                                     the full startup-failure report: Compose's own error lines,
+#                                     each failing service with its recent logs, and the inspect
+#                                     commands
 #   kit_print_urls                   the kit's participant-facing URLs, from .env
 #   kit_current_template             the template marker row from the database, falling back to
 #                                     .env's DATABASE_TEMPLATE if the query fails or returns nothing
@@ -60,6 +69,17 @@ kit_die() {
 # read ./.env, so this kit never passes --env-file, and every invocation must run from ed-fi-api-v8/.
 kit_compose() {
     (cd "$KIT_DIR" && docker compose "$@")
+}
+
+# kit_compose_tee <file> <args...> -- kit_compose, with stdout and stderr (where Compose writes its
+# progress and errors) streamed live and also copied to <file>, so a failed `up --wait` can be
+# diagnosed from Compose's own messages afterwards. Returns Compose's exit status, not tee's. Since
+# the output is now a pipe rather than a terminal, Compose shows its plain (line-by-line) progress.
+kit_compose_tee() {
+    local file="$1"
+    shift
+    kit_compose "$@" 2>&1 | tee "$file"
+    return "${PIPESTATUS[0]}"
 }
 
 kit_require_docker() {
@@ -318,58 +338,236 @@ kit_ensure_dirs() {
 # ----------------------------------------------------------------------------------------------
 
 # `docker compose ps --format json` has printed either one JSON object per line, or a single JSON
-# array, depending on the Compose version. This normalizes either shape to one object per line.
+# array, depending on the Compose version. This normalizes either shape to one object per line. It
+# tracks brace depth (skipping braces inside strings) rather than splitting on "},{", because each
+# container object itself contains nested objects -- for example one per published port, under
+# "Publishers" -- and splitting those apart would separate a container's Health from its Service.
 _kit_normalize_json_objects() {
-    tr -d '\n' | sed -E -e 's/^\[//' -e 's/\]$//' -e 's/\}[[:space:]]*,?[[:space:]]*\{/}\n{/g'
+    awk '
+        {
+            n = length($0)
+            for (i = 1; i <= n; i++) {
+                c = substr($0, i, 1)
+                if (instr) {
+                    obj = obj c
+                    if (esc) esc = 0
+                    else if (c == "\\") esc = 1
+                    else if (c == "\"") instr = 0
+                    continue
+                }
+                if (c == "{") depth++
+                if (depth > 0) obj = obj c
+                if (c == "\"" && depth > 0) instr = 1
+                if (c == "}" && depth > 0) {
+                    depth--
+                    if (depth == 0) {
+                        print obj
+                        obj = ""
+                    }
+                }
+            }
+        }
+    '
 }
 
 # _kit_json_field <json-object> <field-name> -- a bare grep/sed field extractor (no jq dependency on
 # the host), good enough for the flat string/number fields `compose ps --format json` emits.
 _kit_json_field() {
     local obj="$1" name="$2" match
-    match=$(printf '%s' "$obj" | grep -o "\"$name\":\"[^\"]*\"" | head -n1)
+    match=$(printf '%s' "$obj" | grep -oE "\"$name\":[[:space:]]*\"[^\"]*\"" | head -n1 || true)
     if [ -n "$match" ]; then
-        printf '%s' "$match" | sed -E 's/^"[^"]+":"(.*)"$/\1/'
+        printf '%s' "$match" | sed -E 's/^"[^"]+":[[:space:]]*"(.*)"$/\1/'
         return 0
     fi
-    match=$(printf '%s' "$obj" | grep -o "\"$name\":[0-9-]*" | head -n1)
-    printf '%s' "$match" | sed -E "s/^\"$name\"://"
+    match=$(printf '%s' "$obj" | grep -oE "\"$name\":[[:space:]]*-?[0-9]+" | head -n1 || true)
+    printf '%s' "$match" | sed -E "s/^\"$name\":[[:space:]]*//"
 }
 
-# kit_compose_failures -- one "service<TAB>reason" line per container that is unhealthy, or exited
-# with a non-zero code (covers both a failed one-shot init step and a long-running service that
-# died). Prints nothing (and returns success) if every container looks fine, or if the query itself
-# fails (for example, no containers exist yet).
-kit_compose_failures() {
-    local raw obj service state health exitcode reason
-    raw=$(kit_compose ps -a --format json 2>/dev/null) || return 0
-    [ -n "$raw" ] || return 0
-    # `|| [ -n "$obj" ]`: the normalized stream's last line has no trailing newline, and a `read`
-    # that hits EOF mid-line still populates $obj but returns non-zero -- without this, the last
-    # container in the list would be silently dropped from the loop.
-    while IFS= read -r obj || [ -n "$obj" ]; do
-        [ -n "$obj" ] || continue
-        service=$(_kit_json_field "$obj" Service)
-        [ -n "$service" ] || continue
-        state=$(_kit_json_field "$obj" State)
-        health=$(_kit_json_field "$obj" Health)
-        exitcode=$(_kit_json_field "$obj" ExitCode)
-        reason=""
-        if [ "$health" = "unhealthy" ]; then
-            reason="unhealthy"
-        elif [ "$state" = "exited" ] && [ -n "$exitcode" ] && [ "$exitcode" != "0" ]; then
-            reason="exited with code $exitcode"
+# _kit_in_list <item> <newline-separated list> -- true if <item> is exactly one of the lines.
+# (Plain lists rather than associative arrays, which macOS's stock Bash 3.2 doesn't have.)
+_kit_in_list() {
+    [ -n "$1" ] && printf '%s\n' "$2" | grep -qxF -- "$1"
+}
+
+# The failure messages `docker compose up --wait` itself prints, in Compose's wording:
+#   container <name> has no healthcheck configured
+#   container <name> exited (<code>)
+#   container <name> is unhealthy
+#   service "<service>" didn't complete successfully: exit <code>
+# often behind a prefix such as `dependency failed to start: `. Matched case-insensitively, and
+# loosely enough to survive small wording changes between Compose versions.
+_KIT_WAIT_ERROR_RE='container [^ ]+ (has no healthcheck configured|exited \(-?[0-9]+\)'
+_KIT_WAIT_ERROR_RE="$_KIT_WAIT_ERROR_RE"'|is unhealthy)'
+_KIT_WAIT_ERROR_RE="$_KIT_WAIT_ERROR_RE"'|service "?[^" ]+"? didn.?t complete successfully'
+
+# _kit_plain_output <file> -- <file> without carriage returns or ANSI color/cursor sequences.
+_kit_plain_output() {
+    [ -f "$1" ] || return 0
+    tr -d '\r' <"$1" | sed "s/$(printf '\033')\[[0-9;?]*[A-Za-z]//g"
+}
+
+# _kit_compose_wait_errors <up-output-file> -- the distinct --wait error lines in captured `up`
+# output, trimmed, in the order Compose printed them. Prints nothing if there are none.
+_kit_compose_wait_errors() {
+    _kit_plain_output "$1" | { grep -iE "$_KIT_WAIT_ERROR_RE" || true; } |
+        sed -E 's/^[[:space:]]+//; s/[[:space:]]+$//' | awk '!seen[$0]++'
+}
+
+# _kit_last_output_lines <up-output-file> <count> -- the last <count> non-blank lines, trimmed.
+_kit_last_output_lines() {
+    _kit_plain_output "$1" | { grep -v '^[[:space:]]*$' || true; } | tail -n "$2" |
+        sed -E 's/^[[:space:]]+//; s/[[:space:]]+$//'
+}
+
+# _kit_completion_dependencies -- the services some other service depends on with
+# `condition: service_completed_successfully`, one per line, from `docker compose config --format
+# json` (which is held in memory only: it contains the interpolated .env secrets). Returns non-zero
+# if the configuration couldn't be read, so the caller can tell "none" from "unknown".
+_kit_completion_dependencies() {
+    local cfg entry_re
+    cfg=$(kit_compose config --format json 2>/dev/null) || return 1
+    [ -n "$cfg" ] || return 1
+    # Each depends_on entry looks like "<service>": {"condition": "...", "required": true, ...}.
+    entry_re='"[^"]+":[[:space:]]*\{[^{}]*"condition":[[:space:]]*"service_completed_successfully"'
+    printf '%s' "$cfg" | tr -d '\r\n' | { grep -oE "$entry_re" || true; } |
+        sed -E 's/^"([^"]+)".*/\1/' | sort -u
+    return 0
+}
+
+# _kit_container_problem <json-object> <named:0|1> <deps-known:0|1> <completion-deps> -- the reason
+# a container looks like a startup failure, or nothing if it looks fine. <named> is 1 if Compose's
+# own --wait error named it; <completion-deps> is _kit_completion_dependencies' output.
+_kit_container_problem() {
+    local obj="$1" named="$2" deps_known="$3" deps="$4" service state health exitcode
+    service=$(_kit_json_field "$obj" Service)
+    state=$(_kit_json_field "$obj" State)
+    health=$(_kit_json_field "$obj" Health)
+    exitcode=$(_kit_json_field "$obj" ExitCode)
+    if [ "$health" = "unhealthy" ]; then
+        printf 'unhealthy'
+    elif [ "$state" = "exited" ] && [ -n "$exitcode" ] && [ "$exitcode" != "0" ]; then
+        printf 'exited with code %s' "$exitcode"
+    elif [ "$state" = "created" ]; then
+        printf 'never started (a dependency likely failed or was not satisfied)'
+    elif [[ "$service" == init-* ]] && { [ "$state" = "exited" ] || [ "$state" = "running" ]; } &&
+        { { [ "$deps_known" = 1 ] && ! _kit_in_list "$service" "$deps"; } ||
+            { [ "$deps_known" = 0 ] && [ "$named" = 1 ]; }; }; then
+        # A one-shot init step that finished (or is still going) is only a problem if `--wait` was
+        # waiting for it to be *healthy* -- which is what Compose does for any service that nothing
+        # else waits on with service_completed_successfully.
+        if [ "$state" = "exited" ]; then
+            printf 'exited with code 0'
+        else
+            printf 'still running'
         fi
-        [ -n "$reason" ] && printf '%s\t%s\n' "$service" "$reason"
-    done < <(printf '%s' "$raw" | _kit_normalize_json_objects)
+        printf '; Compose --wait may have checked this one-shot service as a long-running one,'
+        printf ' because no other service depends on it with'
+        printf ' condition: service_completed_successfully'
+    elif [ "$named" = 1 ]; then
+        printf "named in Compose's error above (state: %s)" "$state"
+    fi
+}
+
+# kit_compose_failures [up-output-file] -- one "service<TAB>reason" line per failing service, each
+# service at most once: first the services Compose's own --wait errors in <up-output-file> name
+# (container names map back to services through `docker compose ps -a`, never by trimming the
+# name), then any other container that is unhealthy, exited non-zero, never started, or is a
+# one-shot init- service --wait likely treated as long-running. Prints nothing (and returns
+# success) if nothing can be identified, or if the queries themselves fail.
+kit_compose_failures() {
+    local up_log="${1:-}" errors="" named_containers="" named_services="" raw objects
+    local deps="" deps_known=0 seen="" pass obj service name named reason svc
+    if [ -n "$up_log" ]; then
+        errors=$(_kit_compose_wait_errors "$up_log")
+        named_containers=$(printf '%s\n' "$errors" |
+            { grep -oiE 'container [^ ]+ (has no|exited|is unhealthy)' || true; } |
+            sed -E 's/^[^ ]+ \/?([^ ]+) .*/\1/')
+        named_services=$(printf '%s\n' "$errors" |
+            { grep -oiE 'service "?[^" ]+"? didn.?t' || true; } |
+            sed -E 's/^[^ ]+ "?([^" ]+)"? .*/\1/')
+    fi
+    raw=$(kit_compose ps -a --format json 2>/dev/null) || raw=""
+    objects=$(printf '%s' "$raw" | _kit_normalize_json_objects)
+    if deps=$(_kit_completion_dependencies); then
+        deps_known=1
+    fi
+
+    # Two passes over the same containers, so the services Compose named are reported first.
+    for pass in named other; do
+        while IFS= read -r obj; do
+            [ -n "$obj" ] || continue
+            service=$(_kit_json_field "$obj" Service)
+            [ -n "$service" ] || continue
+            name=$(_kit_json_field "$obj" Name)
+            named=0
+            if _kit_in_list "$name" "$named_containers" ||
+                _kit_in_list "$service" "$named_services"; then
+                named=1
+            fi
+            { [ "$pass" = named ] && [ "$named" = 1 ]; } ||
+                { [ "$pass" = other ] && [ "$named" = 0 ]; } || continue
+            _kit_in_list "$service" "$seen" && continue
+            reason=$(_kit_container_problem "$obj" "$named" "$deps_known" "$deps")
+            [ -n "$reason" ] || continue
+            printf '%s\t%s\n' "$service" "$reason"
+            seen="$seen"$'\n'"$service"
+        done <<<"$objects"
+    done
+
+    # A service Compose named by service name that `ps -a` doesn't list at all.
+    while IFS= read -r svc; do
+        [ -n "$svc" ] || continue
+        _kit_in_list "$svc" "$seen" && continue
+        printf "%s\tnamed in Compose's error above (no container found)\n" "$svc"
+        seen="$seen"$'\n'"$svc"
+    done <<<"$named_services"
 }
 
 kit_show_failure_logs() {
     local svc="$1"
     kit_log ""
     kit_log "----- last 20 lines of '$svc' -----"
-    kit_compose logs --no-color --tail=20 "$svc" 2>&1 | sed 's/^/  /'
+    # `|| true`: a logs failure must not end the failure report early under start.sh's `set -e`.
+    kit_compose logs --no-color --tail=20 "$svc" 2>&1 | sed 's/^/  /' || true
     kit_log "Full logs: (cd \"$KIT_DIR\" && docker compose logs $svc)"
+}
+
+# kit_show_up_failure <up-output-file> -- what start.sh prints after `up --wait` fails, given that
+# command's captured output: Compose's own --wait error lines (or, if none is recognized, its last
+# few output lines), then each failing service with its recent logs, then the inspect commands.
+kit_show_up_failure() {
+    local up_log="$1" errors last failures svc reason
+    kit_log ""
+    kit_log "Startup did not complete."
+    errors=$(_kit_compose_wait_errors "$up_log")
+    if [ -n "$errors" ]; then
+        kit_log "Compose reported:"
+        printf '%s\n' "$errors" | sed 's/^/  /'
+    else
+        last=$(_kit_last_output_lines "$up_log" 5)
+        if [ -n "$last" ]; then
+            kit_log "Compose did not report a recognized --wait error. Its last output lines were:"
+            printf '%s\n' "$last" | sed 's/^/  /'
+        else
+            kit_log "Compose printed no output."
+        fi
+    fi
+    kit_log ""
+    kit_log "Checking service status..."
+    failures=$(kit_compose_failures "$up_log" || true)
+    if [ -n "$failures" ]; then
+        while IFS="$(printf '\t')" read -r svc reason; do
+            [ -n "$svc" ] || continue
+            kit_log "FAILED: $svc ($reason)"
+            kit_show_failure_logs "$svc"
+        done <<<"$failures"
+    else
+        kit_log "Could not identify a failing service from Compose's output or its service status."
+    fi
+    kit_log ""
+    kit_log "Inspect further with:"
+    kit_log "  (cd \"$KIT_DIR\" && docker compose ps -a)"
+    kit_log "  (cd \"$KIT_DIR\" && docker compose logs)"
 }
 
 # ----------------------------------------------------------------------------------------------

@@ -46,21 +46,39 @@ container creation (FR-LIFE-7). If any service doesn't become healthy, or a one-
 initialization step exits non-zero, `start` prints something like:
 
 ```text
-Startup did not complete. Checking service status...
+Startup did not complete.
+Compose reported:
+  container edfi-pilot-init-bootstrap-1 has no healthcheck configured
+
+Checking service status...
 FAILED: <service> (<reason>)
 
 ----- last 20 lines of '<service>' -----
   ...
 Full logs: (cd "<path>" && docker compose logs <service>)
+
+Inspect further with:
+  (cd "<path>" && docker compose ps -a)
+  (cd "<path>" && docker compose logs)
 ```
 
-and exits non-zero. Run the printed `docker compose logs <service>` command for the full history.
-If no individual service is reported as exited or unhealthy, inspect further with:
+and exits non-zero. "Compose reported" repeats Compose's own `--wait` error (if it doesn't print a
+recognizable one, `start` shows Compose's last few output lines instead). Each `FAILED` service is
+one that error names, or one that `docker compose ps -a` shows as:
 
-```bash
-docker compose ps -a
-docker compose logs
-```
+- `unhealthy`, or `exited with code <n>` for a non-zero exit code.
+- `never started`: the container was created but never started, usually because a service it
+  depends on failed first.
+- A one-shot `init-` service that `exited with code 0` (or is `still running`), with a note that
+  Compose `--wait` may have checked it as a long-running service. Compose does that for any service
+  that no other service depends on with `condition: service_completed_successfully`, and then fails
+  because a finished one-shot container can never become healthy.
+
+Run the printed `docker compose logs <service>` command for the full history. If no failing service
+can be identified, use the two inspect commands at the end of the report.
+
+`start.sh` and `start.ps1` copy Compose's output as it streams in order to report this, so Compose
+shows its plain, line-by-line progress output rather than its interactive progress display.
 
 **Expected startup order**, if you're trying to figure out where a failure sits in the chain: `db`
 and `config` (CMS) become healthy first, then identity seeding, then the schema and data store

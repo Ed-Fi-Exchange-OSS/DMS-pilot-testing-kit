@@ -20,9 +20,9 @@
     5. Runs `docker compose up -d --build --wait`.
 
     On success, prints the kit's URLs, the template actually in use, and the bootstrap credentials
-    file path. On failure, names the service(s) that failed, shows their recent logs, prints the
-    exact `docker compose logs <service>` command, and exits non-zero. Running this again against an
-    already-running stack exits 0 and makes no changes.
+    file path. On failure, shows Compose's own error, names the service(s) that failed, shows their
+    recent logs, prints the exact `docker compose logs <service>` command, and exits non-zero.
+    Running this again against an already-running stack exits 0 and makes no changes.
 
 .PARAMETER Template
     Set DATABASE_TEMPLATE in .env before starting: 'minimal' or 'populated'. Only takes effect on a
@@ -78,22 +78,12 @@ Write-KitLog 'Starting the stack (docker compose up -d --build --wait).'
 Write-KitLog 'This can take a few minutes on first run: image pulls, the tools image build, schema'
 Write-KitLog 'provisioning, and the template load all happen before this command returns.'
 
-Invoke-KitCompose up -d --build --wait
+# Compose's own `--wait` error (for example "container ... has no healthcheck configured") is often
+# the only statement of what went wrong, so its output is captured, as well as streamed, for the
+# failure report.
+$upOutput = @(Invoke-KitComposeTee up -d --build --wait)
 if ($LASTEXITCODE -ne 0) {
-    Write-KitLog ''
-    Write-KitLog 'Startup did not complete. Checking service status...'
-    $failures = @(Get-KitComposeFailures)
-    if ($failures.Count -gt 0) {
-        foreach ($f in $failures) {
-            Write-KitLog "FAILED: $($f.Service) ($($f.Reason))"
-            Show-KitFailureLogs -Service $f.Service
-        }
-    }
-    else {
-        Write-KitLog 'No individual service was reported as exited or unhealthy. Inspect further with:'
-        Write-KitLog "  cd `"$KitDir`"; docker compose ps -a"
-        Write-KitLog "  cd `"$KitDir`"; docker compose logs"
-    }
+    Show-KitUpFailure -UpOutput $upOutput
     exit 1
 }
 

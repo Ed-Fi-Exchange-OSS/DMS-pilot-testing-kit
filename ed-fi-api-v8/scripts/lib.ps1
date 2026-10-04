@@ -24,6 +24,8 @@ Public API (everything else here is a private helper, prefixed with an underscor
                                           output to the console; sets $LASTEXITCODE
     Get-KitComposeOutput <args...>       same, but captures and returns stdout instead of streaming
                                           it (for `ps`/`exec` queries the caller needs to parse)
+    Invoke-KitComposeTee <args...>       same as Invoke-KitCompose (streams stdout+stderr live, sets
+                                          $LASTEXITCODE), and also returns the output lines
     Get-KitEnvValue -Name X [-Default Y] read a value from .env (or the default if unset/absent)
     Test-KitEnvHasKey -Name X            true if X= appears in .env
     Set-KitEnvValue -Name X -Value Y     replace or append X=Y in .env
@@ -39,10 +41,16 @@ Public API (everything else here is a private helper, prefixed with an underscor
                                           existing .env value, and never prints a secret value.
     Initialize-KitCertificates           generate ssl/server.{crt,key} if either is missing
     Initialize-KitDirectories            create .runtime/ and ${LOG_DIR:-./logs}/nginx
-    Get-KitComposeFailures               one object (Service, Reason) per exited(non-zero)/unhealthy
-                                          container, from `docker compose ps -a --format json`
+    Get-KitComposeFailures [-UpOutput L] one object (Service, Reason) per failing service: those
+                                          named in Compose's `up --wait` errors in the lines L
+                                          first, then any unhealthy, exited(non-zero),
+                                          never-started, or suspect one-shot init- container from
+                                          `docker compose ps -a`
     Show-KitFailureLogs -Service X       last 20 lines of the service's logs, plus the full-log
                                           command
+    Show-KitUpFailure -UpOutput L        the full startup-failure report: Compose's own error
+                                          lines, each failing service with its recent logs, and the
+                                          inspect commands
     Show-KitUrls                         the kit's participant-facing URLs, from .env
     Get-KitActiveTemplate                the template marker row from the database, falling back to
                                           .env's DATABASE_TEMPLATE if the query fails or returns
@@ -140,6 +148,29 @@ function Get-KitComposeOutput {
     Push-Location $script:KitDir
     try {
         & docker compose @args 2>$null
+    }
+    finally {
+        Pop-Location
+    }
+}
+
+# Invoke-KitComposeTee <args...> -- Invoke-KitCompose, with stdout and stderr (where Compose writes
+# its progress and errors) both shown live and also returned as string lines, so a failed
+# `up --wait` can be diagnosed from Compose's own messages afterwards. $LASTEXITCODE is Compose's,
+# as for Invoke-KitCompose. Since the output is now a pipe rather than a terminal, Compose shows its
+# plain (line-by-line) progress. Simple function for the same reason as Invoke-KitCompose above.
+function Invoke-KitComposeTee {
+    # With 2>&1, each stderr line arrives as an ErrorRecord, which Windows PowerShell 5.1 turns into
+    # a terminating error under a caller's $ErrorActionPreference = 'Stop' (PowerShell 7 does not).
+    # Compose writes all of its progress to stderr, so relax that for this function's scope only.
+    $ErrorActionPreference = 'Continue'
+    Push-Location $script:KitDir
+    try {
+        & docker compose @args 2>&1 | ForEach-Object {
+            $line = "$_"
+            Write-KitLog $line
+            $line
+        }
     }
     finally {
         Pop-Location
@@ -394,12 +425,14 @@ function Initialize-KitDirectories {
 # `docker compose ps --format json` has printed either one JSON object per line, or a single JSON
 # array, depending on the Compose version. ConvertFrom-Json handles a single well-formed document;
 # for line-delimited objects (which aren't one valid document), each line is converted on its own.
+# The `ForEach-Object { $_ }` unrolls the array shape: Windows PowerShell 5.1's ConvertFrom-Json
+# emits a JSON array as one object rather than one object per element.
 function Get-KitComposeContainers {
     $raw = Get-KitComposeOutput ps -a --format json
     $text = ($raw -join "`n").Trim()
     if ([string]::IsNullOrWhiteSpace($text)) { return @() }
     try {
-        return @($text | ConvertFrom-Json -ErrorAction Stop)
+        return @($text | ConvertFrom-Json -ErrorAction Stop | ForEach-Object { $_ })
     }
     catch {
         $items = foreach ($line in $raw) {
@@ -411,19 +444,170 @@ function Get-KitComposeContainers {
     }
 }
 
-# Get-KitComposeFailures -- one object (Service, Reason) per container that is unhealthy, or exited
-# with a non-zero code (covers both a failed one-shot init step and a long-running service that
-# died). Returns an empty array if every container looks fine.
-function Get-KitComposeFailures {
-    $containers = Get-KitComposeContainers
-    $failures = foreach ($c in $containers) {
-        $health = if ($c.PSObject.Properties['Health']) { $c.Health } else { '' }
-        $exitCode = if ($c.PSObject.Properties['ExitCode']) { $c.ExitCode } else { 0 }
-        if ($health -eq 'unhealthy') {
-            [PSCustomObject]@{ Service = $c.Service; Reason = 'unhealthy' }
+# Get-KitJsonProperty -Object O -Name X -- O.X as a string, or '' if O has no X (Set-StrictMode
+# makes reading a missing property an error).
+function Get-KitJsonProperty {
+    param($Object, [string] $Name)
+    if ($null -ne $Object -and $Object.PSObject.Properties[$Name]) {
+        return "$($Object.$Name)"
+    }
+    return ''
+}
+
+# The failure messages `docker compose up --wait` itself prints, in Compose's wording:
+#   container <name> has no healthcheck configured
+#   container <name> exited (<code>)
+#   container <name> is unhealthy
+#   service "<service>" didn't complete successfully: exit <code>
+# often behind a prefix such as `dependency failed to start: `. Matched case-insensitively (-match's
+# default), and loosely enough to survive small wording changes between Compose versions.
+$script:KitWaitErrorPattern = 'container [^ ]+ (has no healthcheck configured|exited \(-?[0-9]+\)' +
+'|is unhealthy)|service "?[^" ]+"? didn.?t complete successfully'
+
+# ConvertTo-KitPlainLines -Lines L -- L without carriage returns or ANSI color/cursor sequences.
+function ConvertTo-KitPlainLines {
+    param([string[]] $Lines = @())
+    foreach ($line in $Lines) {
+        ("$line" -replace "`r", '') -replace '\x1b\[[0-9;?]*[A-Za-z]', ''
+    }
+}
+
+# Get-KitComposeWaitErrors -Lines L -- the distinct --wait error lines in captured `up` output,
+# trimmed, in the order Compose printed them.
+function Get-KitComposeWaitErrors {
+    param([string[]] $Lines = @())
+    $seen = [System.Collections.Generic.HashSet[string]]::new()
+    foreach ($line in (ConvertTo-KitPlainLines -Lines $Lines)) {
+        if ($line -match $script:KitWaitErrorPattern) {
+            $trimmed = $line.Trim()
+            if ($seen.Add($trimmed)) { $trimmed }
         }
-        elseif ($c.State -eq 'exited' -and $exitCode -ne 0) {
-            [PSCustomObject]@{ Service = $c.Service; Reason = "exited with code $exitCode" }
+    }
+}
+
+# Get-KitLastOutputLines -Lines L -Count N -- the last N non-blank lines of L, trimmed.
+function Get-KitLastOutputLines {
+    param([string[]] $Lines = @(), [int] $Count)
+    $nonBlank = @(ConvertTo-KitPlainLines -Lines $Lines |
+        Where-Object { -not [string]::IsNullOrWhiteSpace($_) } |
+        ForEach-Object { $_.Trim() })
+    if ($nonBlank.Count -eq 0) { return }
+    $nonBlank | Select-Object -Last $Count
+}
+
+# Get-KitCompletionDependencies -- the services some other service depends on with
+# `condition: service_completed_successfully`, from `docker compose config --format json` (which is
+# held in memory only: it contains the interpolated .env secrets). Returns $null if the
+# configuration couldn't be read, so the caller can tell "none" (an empty array) from "unknown".
+function Get-KitCompletionDependencies {
+    $raw = Get-KitComposeOutput config --format json
+    if ($LASTEXITCODE -ne 0) { return $null }
+    $text = ($raw -join "`n").Trim()
+    if ([string]::IsNullOrWhiteSpace($text)) { return $null }
+    try {
+        $config = $text | ConvertFrom-Json -ErrorAction Stop
+    }
+    catch {
+        return $null
+    }
+    $services = if ($config.PSObject.Properties['services']) { $config.services } else { $null }
+    $deps = @()
+    if ($null -ne $services) {
+        foreach ($service in $services.PSObject.Properties) {
+            if (-not $service.Value.PSObject.Properties['depends_on']) { continue }
+            foreach ($dep in $service.Value.depends_on.PSObject.Properties) {
+                $condition = Get-KitJsonProperty $dep.Value 'condition'
+                if ($condition -eq 'service_completed_successfully') { $deps += $dep.Name }
+            }
+        }
+    }
+    # The leading comma keeps an empty result an (empty) array instead of collapsing to $null.
+    return , @($deps | Sort-Object -Unique)
+}
+
+# Get-KitContainerProblem -- the reason a container looks like a startup failure, or '' if it looks
+# fine. -Named: Compose's own --wait error named it. -CompletionDependencies:
+# Get-KitCompletionDependencies' result ($null if unknown).
+function Get-KitContainerProblem {
+    param($Container, [bool] $Named, $CompletionDependencies)
+    $service = Get-KitJsonProperty $Container 'Service'
+    $state = Get-KitJsonProperty $Container 'State'
+    $health = Get-KitJsonProperty $Container 'Health'
+    $exitCode = Get-KitJsonProperty $Container 'ExitCode'
+    $depsKnown = $null -ne $CompletionDependencies
+    if ($health -eq 'unhealthy') {
+        return 'unhealthy'
+    }
+    if ($state -eq 'exited' -and $exitCode -ne '' -and $exitCode -ne '0') {
+        return "exited with code $exitCode"
+    }
+    if ($state -eq 'created') {
+        return 'never started (a dependency likely failed or was not satisfied)'
+    }
+    if ($service -like 'init-*' -and ($state -eq 'exited' -or $state -eq 'running') -and
+        (($depsKnown -and $CompletionDependencies -notcontains $service) -or
+        (-not $depsKnown -and $Named))) {
+        # A one-shot init step that finished (or is still going) is only a problem if `--wait` was
+        # waiting for it to be *healthy* -- which is what Compose does for any service that nothing
+        # else waits on with service_completed_successfully.
+        $what = if ($state -eq 'exited') { 'exited with code 0' } else { 'still running' }
+        return ("$what; Compose --wait may have checked this one-shot service as a long-running " +
+            'one, because no other service depends on it with ' +
+            'condition: service_completed_successfully')
+    }
+    if ($Named) {
+        return "named in Compose's error above (state: $state)"
+    }
+    return ''
+}
+
+# Get-KitComposeFailures [-UpOutput L] -- one object (Service, Reason) per failing service, each
+# service at most once: first the services Compose's own --wait errors in the captured `up` output L
+# name (container names map back to services through `docker compose ps -a`, never by trimming the
+# name), then any other container that is unhealthy, exited non-zero, never started, or is a
+# one-shot init- service --wait likely treated as long-running. Returns an empty array if nothing
+# can be identified.
+function Get-KitComposeFailures {
+    param([string[]] $UpOutput = @())
+    $namedContainers = @()
+    $namedServices = @()
+    foreach ($line in (Get-KitComposeWaitErrors -Lines $UpOutput)) {
+        if ($line -match 'container /?([^ ]+) (has no|exited|is unhealthy)') {
+            $namedContainers += $Matches[1]
+        }
+        if ($line -match 'service "?([^" ]+)"? didn.?t') {
+            $namedServices += $Matches[1]
+        }
+    }
+    $containers = @(Get-KitComposeContainers)
+    $deps = Get-KitCompletionDependencies
+
+    $seen = [System.Collections.Generic.HashSet[string]]::new()
+    $failures = [System.Collections.Generic.List[object]]::new()
+    # Two passes over the same containers, so the services Compose named are reported first.
+    foreach ($pass in 'named', 'other') {
+        foreach ($c in $containers) {
+            $service = Get-KitJsonProperty $c 'Service'
+            if ([string]::IsNullOrEmpty($service)) { continue }
+            $named = ($namedContainers -contains (Get-KitJsonProperty $c 'Name')) -or
+            ($namedServices -contains $service)
+            if (($pass -eq 'named') -ne $named) { continue }
+            if ($seen.Contains($service)) { continue }
+            $reason = Get-KitContainerProblem -Container $c -Named $named `
+                -CompletionDependencies $deps
+            if ([string]::IsNullOrEmpty($reason)) { continue }
+            $failures.Add([PSCustomObject]@{ Service = $service; Reason = $reason })
+            [void]$seen.Add($service)
+        }
+    }
+
+    # A service Compose named by service name that `ps -a` doesn't list at all.
+    foreach ($service in $namedServices) {
+        if ($seen.Add($service)) {
+            $failures.Add([PSCustomObject]@{
+                    Service = $service
+                    Reason  = "named in Compose's error above (no container found)"
+                })
         }
     }
     return @($failures)
@@ -436,6 +620,48 @@ function Show-KitFailureLogs {
     $logLines = Get-KitComposeOutput logs --no-color --tail=20 $Service
     foreach ($line in $logLines) { Write-KitLog "  $line" }
     Write-KitLog "Full logs: (cd `"$script:KitDir`"; docker compose logs $Service)"
+}
+
+# Show-KitUpFailure -UpOutput L -- what start.ps1 prints after `up --wait` fails, given that
+# command's captured output L: Compose's own --wait error lines (or, if none is recognized, its last
+# few output lines), then each failing service with its recent logs, then the inspect commands.
+function Show-KitUpFailure {
+    param([string[]] $UpOutput = @())
+    Write-KitLog ''
+    Write-KitLog 'Startup did not complete.'
+    $errors = @(Get-KitComposeWaitErrors -Lines $UpOutput)
+    if ($errors.Count -gt 0) {
+        Write-KitLog 'Compose reported:'
+        foreach ($line in $errors) { Write-KitLog "  $line" }
+    }
+    else {
+        $last = @(Get-KitLastOutputLines -Lines $UpOutput -Count 5)
+        if ($last.Count -gt 0) {
+            Write-KitLog ('Compose did not report a recognized --wait error. ' +
+                'Its last output lines were:')
+            foreach ($line in $last) { Write-KitLog "  $line" }
+        }
+        else {
+            Write-KitLog 'Compose printed no output.'
+        }
+    }
+    Write-KitLog ''
+    Write-KitLog 'Checking service status...'
+    $failures = @(Get-KitComposeFailures -UpOutput $UpOutput)
+    if ($failures.Count -gt 0) {
+        foreach ($f in $failures) {
+            Write-KitLog "FAILED: $($f.Service) ($($f.Reason))"
+            Show-KitFailureLogs -Service $f.Service
+        }
+    }
+    else {
+        Write-KitLog ("Could not identify a failing service from Compose's output or its service " +
+            'status.')
+    }
+    Write-KitLog ''
+    Write-KitLog 'Inspect further with:'
+    Write-KitLog "  cd `"$script:KitDir`"; docker compose ps -a"
+    Write-KitLog "  cd `"$script:KitDir`"; docker compose logs"
 }
 
 # ------------------------------------------------------------------------------------------------
