@@ -16,8 +16,11 @@ Compose builds it on first `up`; participants need no host .NET SDK.
 
 The image runs as the non-root `app` user (UID/GID 1654, from the .NET base image), in `WORKDIR
 /work`, and defaults to `CMD ["sh"]`. There is no `ENTRYPOINT`, so a Compose service can run
-`command: ["sh", "/init/provision-schema.sh"]` or similar. `HEALTHCHECK NONE`: these are one-shot
-containers gated with `service_completed_successfully`.
+`command: ["sh", "/init/provision-schema.sh"]` or similar. There is no `HEALTHCHECK` (and no
+`HEALTHCHECK NONE`, which made Compose 2.38's `up --wait` fail with "no healthcheck configured"):
+these are one-shot containers gated with `service_completed_successfully`. Every init service must
+be named that way in some other service's `depends_on`, or `up --wait` checks it as long-running
+and fails.
 
 `/work` and `/app/ApiSchema` are owned by `app`. Docker initializes an empty named volume from the
 image's mount point, so a fresh `api-schema` volume mounted at `/app/ApiSchema` is writable by the

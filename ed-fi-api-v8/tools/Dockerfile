@@ -139,6 +139,4 @@ RUN api-schema-tools --version \
 WORKDIR /work
 USER 1654:1654
 
-HEALTHCHECK NONE
-
 CMD ["sh"]

@@ -47,6 +47,8 @@ text in the files is touched.
 The `swagger-ui` service in `../compose.ingress.yml` serves these files with the kit's pinned
 `${NGINX_IMAGE}`. Its command, adapted from DMS `swagger-ui.yml`, renders `index.html` with
 `envsubst`, checks that the result isn't empty, copies the JavaScript and favicon, and starts NGINX.
+It starts only after `init-bootstrap` completes successfully, so `docker compose up --wait` waits
+for that one-shot service (see the comment in `../compose.ingress.yml`).
 
 Notes:
 

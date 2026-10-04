@@ -68,6 +68,12 @@ services:
         test -s /usr/share/nginx/html/index.html &&
         cp /tmp/swagger-template/*.js /tmp/swagger-template/favicon.png /usr/share/nginx/html/ &&
         exec nginx -g 'daemon off;'
+    # Defined in compose.init.yml. With this dependency, `up --wait` waits for the one-shot
+    # init-bootstrap to complete instead of checking it as a long-running service (which fails).
+    # Swagger UI is only useful once DMS is initialized anyway.
+    depends_on:
+      init-bootstrap:
+        condition: service_completed_successfully
     healthcheck:
       test: ["CMD-SHELL", "wget -q --spider http://127.0.0.1/ || exit 1"]
       interval: 10s

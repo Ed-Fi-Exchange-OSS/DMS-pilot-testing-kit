@@ -102,6 +102,11 @@ jobs:
       - name: Generate the TLS certificate
         run: ./ed-fi-api-v8/ssl/generate-certificate.sh
 
+      - name: Show Docker and Compose versions
+        run: |
+          docker version
+          docker compose version
+
       - name: Start the kit (minimal template)
         run: ./ed-fi-api-v8/start.sh --template minimal
 
@@ -147,6 +152,11 @@ jobs:
 
       - name: Generate the TLS certificate
         run: ./ed-fi-api-v8/ssl/generate-certificate.sh
+
+      - name: Show Docker and Compose versions
+        run: |
+          docker version
+          docker compose version
 
       - name: Start the kit (populated template)
         run: ./ed-fi-api-v8/start.sh --template populated
