@@ -194,7 +194,8 @@ AUTH_HEADER="Authorization: Bearer $TOKEN"
 # ==================================================================================================
 
 http_request GET "$SMOKE_BASE" --header "$AUTH_HEADER"
-if [ "$RESP_STATUS" = "200" ] && jq empty "$RESP_BODY_FILE" 2>/dev/null; then
+# DELIBERATELY BROKEN for the Task 17 CI check -- revert this commit.
+if [ "$RESP_STATUS" = "299" ] && jq empty "$RESP_BODY_FILE" 2>/dev/null; then
     record_pass discovery "GET $SMOKE_BASE -> 200"
 else
     record_fail discovery "GET $SMOKE_BASE returned HTTP $RESP_STATUS: $(cat "$RESP_BODY_FILE")"
