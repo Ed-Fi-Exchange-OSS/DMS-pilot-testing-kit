@@ -56,9 +56,9 @@ The sandbox still has no Docker daemon, so new work is drafted here and verified
   below for exact commands.
 - Task 17: implemented (`.github/workflows/kit-smoke.yml`). On PR #5 at `dadc80a`, run 37238116552
   is green: shellcheck, PSScriptAnalyzer, and the minimal-template smoke job (clean runner: start,
-  then `smoke-test.sh`). The populated job runs only on the nightly schedule or manual dispatch and
-  hasn't run yet. The deliberately-broken check is still open, though the workflow did fail
-  correctly on real startup failures before the fixes below.
+  then `smoke-test.sh`). The populated job runs only on the nightly schedule or manual dispatch;
+  dispatch run 37341471550 (2026-10-05) is green in 5m40s. Deliberately broken run 37378594249
+  fails as expected. Task 17 is done.
 - PR #5 review and CI fixes (2026-10-04); CI and a host run pass with all of them in place, but the
   new failure report has only been exercised against a fake `docker` (see Task 4), and the
   Windows PowerShell 5.1 stderr fix in `Get-KitComposeOutput` is untested on 5.1:
@@ -75,8 +75,9 @@ The sandbox still has no Docker daemon, so new work is drafted here and verified
     in `http/smoke.http` step 10. `smoke-test --debug` / `-DebugCredentials` prints credentials.
   - Swagger UI leaves `pageSize` empty by default; DMS advertises a default of 500 but rejects
     `pageSize` without `pageToken`. Upstream: DMS-1588. Known-limitations candidate (Checkpoint E).
-- Next: Task 15's two host checks, close out Task 17 (populated dispatch run, deliberately broken
-  run), then Checkpoint E.
+- Task 15's two host checks (DMS log level, correlation ID in NGINX and DMS logs) pass on the host
+  (2026-10-05).
+- Next: Checkpoint E.
 
 ---
 
@@ -615,7 +616,8 @@ Cursor paging needs a first token from a `limit=` response's `Next-Page-Token` h
       `down` or even `down -v`. The file's multi-day timestamp spread -- spanning separate sessions
       of Task 18 and later work on this host -- is itself circumstantial evidence it was never
       wiped by an intervening `down`.
-- [ ] Changing `LOG_LEVEL` changes DMS verbosity after restart -- the wiring is real
+- [x] Changing `LOG_LEVEL` changes DMS verbosity after restart -- host check passed 2026-10-05.
+      Earlier notes: the wiring is real
       (`compose.core.yml`: `Serilog__MinimumLevel__Default: ${DMS_LOG_LEVEL:-Warning}`, matching
       `.env.example`'s `DMS_LOG_LEVEL=Warning`), but no artifact on disk shows DMS's own log output
       (by design: DMS isn't file-logged to `${LOG_DIR}`; see README "Logs"), and this sandbox has no
@@ -624,7 +626,8 @@ Cursor paging needs a first token from a `limit=` response's `Next-Page-Token` h
       `DMS_LOG_LEVEL=Information` in `.env`, `docker compose up -d --force-recreate dms`, repeat the
       same requests, and `docker compose logs dms --since 1m | wc -l` again -- the `Information`
       count should be far larger and include lines absent at `Warning`.
-- [ ] The correlation ID sent by a client appears in both NGINX and DMS log lines -- the NGINX side
+- [x] The correlation ID sent by a client appears in both NGINX and DMS log lines -- fresh pairing
+      passed on the host 2026-10-05. Earlier notes: the NGINX side
       is confirmed from real data already in this repo: `logs/nginx/access.json` has a line with
       `"correlation_id":"spike-corr-12345","service":"dms","status":200`, the same ID used in the
       Phase 0 spike (spike-notes Q10), and `git log`/`git diff` on
@@ -739,13 +742,14 @@ generates a certificate, runs `start.sh` on a clean runner with the minimal temp
 dispatch. It also runs `shellcheck` and `PSScriptAnalyzer` over the scripts.
 
 **Acceptance criteria:**
-- [ ] The workflow is green on a PR; it fails when the smoke test is deliberately broken -- green
-      on PR #5 (run 37238116552, `dadc80a`). Not yet broken on purpose; it did fail on real
-      startup failures (e.g. run 37235062682) and named the cause after the fallback fix.
+- [x] The workflow is green on a PR; it fails when the smoke test is deliberately broken -- green
+      on PR #5 (run 37238116552, `dadc80a`). Deliberately broken at `f7f2e81` (Discovery check
+      expects 299): run 37378594249 fails at "Run the smoke test" with exactly one
+      `[discovery] FAIL`, and logs, upload, and teardown still run (2026-10-05).
 
 **Verification:**
-- [x] A PR run -- run 37238116552 (minimal template). The populated job (schedule/dispatch only)
-      hasn't run yet.
+- [x] A PR run -- run 37238116552 (minimal template). Populated job: manual dispatch run
+      37341471550 on `dms-compose` (2026-10-05) is green, populated job 5m40s.
 
 Linux notes: the scripts that read `.runtime/` run the tools container as `--user 0:0`, which works
 with rootful Docker Engine (the Ubuntu runner), rootless Docker, and Podman, but not with
