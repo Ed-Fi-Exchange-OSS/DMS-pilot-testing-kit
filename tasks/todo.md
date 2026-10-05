@@ -6,7 +6,7 @@ the repository root; new work lives in `ed-fi-api-v8/`.
 Common verification command (defined in Task 12, used informally before then):
 `docker compose -f ed-fi-api-v8/compose.yml --env-file ed-fi-api-v8/.env up -d --wait`
 
-## Status (2026-09-29)
+## Status (2026-10-04)
 
 The Phase 0 spike ran on a host with Docker; its results are in [spike-notes.md](./spike-notes.md).
 The sandbox still has no Docker daemon, so new work is drafted here and verified on the host.
@@ -30,8 +30,11 @@ The sandbox still has no Docker daemon, so new work is drafted here and verified
   stack is reloaded at once, bootstrap token → 403, anonymous → 401, switch off → 404).
   `http/claimset-test.http` exercises the endpoint.
 - Checkpoint C: passes on the host.
-- Tasks 12–14: implemented. On the host so far, `smoke-test.sh` passes in Git Bash; the other Phase 4
-  checks (start/stop/reset/bootstrap, new-credential shapes, PowerShell, REST Client) are pending.
+- Tasks 12–14 and Checkpoint D: done (2026-10-05). Every acceptance and verification item passed in
+  a host QA run on clean volumes, both templates, Bash and PowerShell 7: lifecycle scripts, all
+  three credential shapes with first requests, name reuse, CMS down, smoke test (including with
+  DMS stopped), and both `.http` files in REST Client. `smoke.http` step 10 now uses the
+  `uri://ed-fi.org` namespace. Windows PowerShell 5.1 was not part of the run.
 - Task 16: done (2026-10-01). `ed-fi-api-v8/README.md` plus `docs/credentials-and-claim-sets.md` and
   `docs/troubleshooting.md`; root `README.md` links to it. FR-DOC coverage checklist is under Task 16
   below; the one real gap found (NFR-PERF-4) is fixed. `markdownlint-cli2` reports only the same
@@ -51,9 +54,29 @@ The sandbox still has no Docker daemon, so new work is drafted here and verified
   `access.json` and `docker compose logs dms` in the same run (the NGINX half is covered by real
   data; the DMS half only by unchanged spike-notes Q10 evidence, not a fresh pairing). See Task 15
   below for exact commands.
-- Task 17: not started. No `.github/workflows/kit-smoke.yml` exists yet.
-- Next: finish the Phase 4 host checks (Checkpoint D) and Task 15's host verification, draft Task 17
-  (CI workflow), then Checkpoint E.
+- Task 17: implemented (`.github/workflows/kit-smoke.yml`). On PR #5 at `dadc80a`, run 37238116552
+  is green: shellcheck, PSScriptAnalyzer, and the minimal-template smoke job (clean runner: start,
+  then `smoke-test.sh`). The populated job runs only on the nightly schedule or manual dispatch and
+  hasn't run yet. The deliberately-broken check is still open, though the workflow did fail
+  correctly on real startup failures before the fixes below.
+- PR #5 review and CI fixes (2026-10-04); CI and a host run pass with all of them in place, but the
+  new failure report has only been exercised against a fake `docker` (see Task 4), and the
+  Windows PowerShell 5.1 stderr fix in `Get-KitComposeOutput` is untested on 5.1:
+  - Startup requires Docker Compose 2.20+ (top-level `include`); the start scripts check it.
+  - `swagger-ui` depends on `init-bootstrap` (`service_completed_successfully`) and the tools image
+    no longer sets `HEALTHCHECK NONE`. Without both, `up --wait` failed on the runner's Compose
+    2.38.2 ("container ... has no healthcheck configured", docker/compose#13522) and raced on any
+    version. See `tools/README.md`.
+  - When startup fails, the start scripts now print Compose's own `--wait` error, the failing
+    services' logs, and containers stuck in `created` (`docs/troubleshooting.md`).
+  - NGINX health check is back on `curl` against `127.0.0.1` (the Copilot `wget` change broke it).
+  - The smoke test's assessment step now writes an assessment and a studentAssessment, which
+    AssessmentVendor may do; it can't read schools or write studentSchoolAssociations. Same change
+    in `http/smoke.http` step 10. `smoke-test --debug` / `-DebugCredentials` prints credentials.
+  - Swagger UI leaves `pageSize` empty by default; DMS advertises a default of 500 but rejects
+    `pageSize` without `pageToken`. Upstream: DMS-1588. Known-limitations candidate (Checkpoint E).
+- Next: Task 15's two host checks, close out Task 17 (populated dispatch run, deliberately broken
+  run), then Checkpoint E.
 
 ---
 
@@ -99,7 +122,7 @@ health checks, and `127.0.0.1` bindings. Create a commented `.env.example` with 
 `edfialliance/ed-fi-api-configuration-service:pre@sha256:57c0afed…` (full digests in `plan.md`).
 
 **Acceptance criteria:**
-- [ ] `docker compose config` succeeds using only `.env.example` copied to `.env`
+- [x] `docker compose config` succeeds using only `.env.example` copied to `.env` (2026-10-04)
 - [ ] Every image is a pinned tag or digest supplied through `.env` (FR-PLAT-5)
 - [ ] Health checks have bounded `retries`/`start_period`; no fixed sleeps (NFR-REL-1/2)
 - [ ] License headers on all files (NFR-MAINT-4); `.gitignore` covers `.env`, `.runtime/`, `logs/`, `ssl/*.key`
@@ -199,7 +222,9 @@ Also:
 - [x] `dms."EffectiveSchema"` hash is `a0d39468ef30d3e99273065256bfffa42b799404ca5fbc09a8648f349d9217e1`
 - [x] Re-run doesn't re-register the data store, restage the volume, or re-provision
 - [ ] A volume pre-filled with TPDM (from copy-up) is detected and restaged as core only
-- [ ] Failure of any init step makes `up --wait` fail and names the service
+- [ ] Failure of any init step makes `up --wait` fail and names the service -- the start scripts'
+      failure report was rewritten 2026-10-04 and tested only against a fake `docker`; needs a
+      host run with an init step forced to fail
 - [x] `GET /api/metadata/xsd/ed-fi/files` and `/api/metadata/specifications/discovery-spec.json` return 200
 
 **Verification:**
@@ -236,7 +261,7 @@ DMS/CMS `PathBase` and forwarded-header trust. Make host ports configurable.
 - [ ] Missing certificate files → nginx fails with an actionable message, and the cert script fixes it
 
 **Verification:**
-- [ ] Token via `https://localhost/api/oauth/token`, then an authenticated GET, both through NGINX
+- [x] Token via `https://localhost/api/oauth/token`, then an authenticated GET, both through NGINX -- host QA 2026-10-05 (Checkpoint D run, every first request)
 
 **Dependencies:** Checkpoint A
 **Files likely touched:** `ed-fi-api-v8/compose.yml`, `ed-fi-api-v8/nginx/default.conf.template`, `ed-fi-api-v8/ssl/generate-certificate.{sh,ps1}`, `.env.example`
@@ -271,7 +296,8 @@ The spike found `/swagger/` served an empty `index.html` (a YAML folded-scalar b
 internet access: record it as a known limitation, or vendor the files.
 
 **Acceptance criteria:**
-- [ ] `/swagger` loads the Resources and Descriptors specs and "Try it out" succeeds with a token (FR-FEAT-3)
+- [x] `/swagger` loads the Resources and Descriptors specs and "Try it out" succeeds with a token (FR-FEAT-3)
+      -- host browser check 2026-10-04, after the `pageSize` default fix (DMS-1588)
 - [ ] `/pgadmin` shows the preconfigured server
 - [ ] XSD and OpenAPI metadata endpoints are reachable under `/api/metadata`
 
@@ -411,7 +437,7 @@ From the spike (Q6) and decision 8 in plan.md:
 - [ ] A DataWarehouse credential with no education organization IDs can GET every resource and its
       `/deletes`, including students outside the baseline organizations on the populated template;
       POST, PUT, and DELETE return 403
-- [ ] The first request with a new DataWarehouse credential after a clean start returns 200, not 500
+- [x] The first request with a new DataWarehouse credential after a clean start returns 200, not 500 -- host QA 2026-10-05 (Checkpoint D run, clean minimal start)
 - [ ] Standard claim sets are byte-identical before and after (export diff)
 
 **Verification:**
@@ -492,12 +518,12 @@ The `.sh` wrappers `export MSYS_NO_PATHCONV=1`: Git Bash on Windows otherwise re
 paths such as `/app/...` into Windows paths (spike Q1).
 
 **Acceptance criteria:**
-- [ ] Same flags and same output on bash and pwsh (tested on Linux; pwsh also tested on Windows)
-- [ ] `start` against a running stack exits 0, with no changes
-- [ ] `reset` without confirmation does nothing
+- [x] Same flags and same output on bash and pwsh (tested on Linux; pwsh also tested on Windows) -- host QA 2026-10-05 (Checkpoint D run)
+- [x] `start` against a running stack exits 0, with no changes -- host QA 2026-10-05 (Checkpoint D run)
+- [x] `reset` without confirmation does nothing -- host QA 2026-10-05 (Checkpoint D run)
 
 **Verification:**
-- [ ] Manual runs of each command, in both shells
+- [x] Manual runs of each command, in both shells -- host QA 2026-10-05 (Checkpoint D run)
 
 **Dependencies:** Checkpoint C
 **Files likely touched:** `ed-fi-api-v8/{start,stop,reset,bootstrap}.{sh,ps1}`
@@ -521,12 +547,12 @@ isn't ready (FR-CRED-1..10). The logic could live in the tool container, as
 `docker compose run --rm tools new-credential`.
 
 **Acceptance criteria:**
-- [ ] Each shape yields a credential whose first authorized request succeeds with no extra configuration
-- [ ] Reusing an existing `--name` fails without modifying the existing registration
-- [ ] CMS down → exit non-zero with "run start first"
+- [x] Each shape yields a credential whose first authorized request succeeds with no extra configuration -- host QA 2026-10-05 (Checkpoint D run)
+- [x] Reusing an existing `--name` fails without modifying the existing registration -- host QA 2026-10-05 (Checkpoint D run)
+- [x] CMS down → exit non-zero with "run start first" -- host QA 2026-10-05 (Checkpoint D run)
 
 **Verification:**
-- [ ] Token plus a GET for each shape; POST a school with a SIS credential → 403 (not admin)
+- [x] Token plus a GET for each shape; POST a school with a SIS credential → 403 (not admin) -- host QA 2026-10-05 (Checkpoint D run)
 
 **Dependencies:** Task 12
 **Files likely touched:** `ed-fi-api-v8/new-credential.{sh,ps1}`, `ed-fi-api-v8/init/new-credential.sh`
@@ -548,19 +574,19 @@ Cursor paging needs a first token from a `limit=` response's `Next-Page-Token` h
 `GET /data/ed-fi/{resource}/partitions`; `pageSize` alone returns 400 (spike Q8).
 
 **Acceptance criteria:**
-- [ ] `smoke-test` exits 0 on a fresh minimal start and a fresh populated start; non-zero when DMS is stopped
-- [ ] `edorgs.http` re-run against a bootstrapped environment → no errors, no duplicates
-- [ ] Populated-only requests fail with a recognizable message on minimal (FR-TEST-8)
+- [x] `smoke-test` exits 0 on a fresh minimal start and a fresh populated start; non-zero when DMS is stopped -- host QA 2026-10-05 (Checkpoint D run)
+- [x] `edorgs.http` re-run against a bootstrapped environment → no errors, no duplicates -- host QA 2026-10-05 (Checkpoint D run)
+- [x] Populated-only requests fail with a recognizable message on minimal (FR-TEST-8) -- host QA 2026-10-05 (Checkpoint D run)
 
 **Verification:**
-- [ ] Run the smoke test in both shells; run both `.http` files in VS Code REST Client
+- [x] Run the smoke test in both shells; run both `.http` files in VS Code REST Client -- host QA 2026-10-05 (Checkpoint D run)
 
 **Dependencies:** Task 13
 **Files likely touched:** `ed-fi-api-v8/http/smoke.http`, `ed-fi-api-v8/http/edorgs.http`, `ed-fi-api-v8/smoke-test.{sh,ps1}`
 **Estimated scope:** M
 
 ### Checkpoint D
-- [ ] Walk through the flow for each of the three shapes on a clean volume: start → credential → smoke → first request
+- [x] Walk through the flow for each of the three shapes on a clean volume: start → credential → smoke → first request -- host QA 2026-10-05 (Checkpoint D run)
 
 ---
 
@@ -713,10 +739,13 @@ generates a certificate, runs `start.sh` on a clean runner with the minimal temp
 dispatch. It also runs `shellcheck` and `PSScriptAnalyzer` over the scripts.
 
 **Acceptance criteria:**
-- [ ] The workflow is green on a PR; it fails when the smoke test is deliberately broken
+- [ ] The workflow is green on a PR; it fails when the smoke test is deliberately broken -- green
+      on PR #5 (run 37238116552, `dadc80a`). Not yet broken on purpose; it did fail on real
+      startup failures (e.g. run 37235062682) and named the cause after the fallback fix.
 
 **Verification:**
-- [ ] A PR run
+- [x] A PR run -- run 37238116552 (minimal template). The populated job (schedule/dispatch only)
+      hasn't run yet.
 
 Linux notes: the scripts that read `.runtime/` run the tools container as `--user 0:0`, which works
 with rootful Docker Engine (the Ubuntu runner), rootless Docker, and Podman, but not with
