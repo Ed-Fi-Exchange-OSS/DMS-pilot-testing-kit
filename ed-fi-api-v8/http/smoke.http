@@ -204,7 +204,7 @@ Content-Type: application/json
 
 {
   "assessmentIdentifier": "pilot-kit-example",
-  "namespace": "uri://gbisd.edu/pilot-kit-example",
+  "namespace": "uri://ed-fi.org/pilot-kit-example",
   "assessmentTitle": "Pilot Kit Example Assessment",
   "academicSubjects": [
     { "academicSubjectDescriptor": "uri://ed-fi.org/AcademicSubjectDescriptor#English Language Arts" }
@@ -221,7 +221,7 @@ Content-Type: application/json
   "studentReference": { "studentUniqueId": "REPLACE-WITH-POPULATED-STUDENT-ID" },
   "assessmentReference": {
     "assessmentIdentifier": "pilot-kit-example",
-    "namespace": "uri://gbisd.edu/pilot-kit-example"
+    "namespace": "uri://ed-fi.org/pilot-kit-example"
   },
   "reportedSchoolReference": { "schoolId": 255901001 }
 }
