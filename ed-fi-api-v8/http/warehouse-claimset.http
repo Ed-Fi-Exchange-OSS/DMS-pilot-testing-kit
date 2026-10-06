@@ -3,27 +3,36 @@
 # The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 # See the LICENSE and NOTICES files in the project root for more information.
 
-# Creates and tests client credentials using the warehouse claimset
+# Creates and tests client credentials using the warehouse claimset.
+# The `CMS_ADMIN_CLIENT_SECRET` needs to be setup as an environment variable; the value
+# is stored in your `.env` file, but needs to be copied to the environment variables
+# used for your .http file client.
 
 @baseUrlApi = https://localhost/api
 @baseUrlConfig = https://localhost/config
+@cmsAdminSecret = {{CMS_ADMIN_CLIENT_SECRET}}
 
 ### Authenticate with bootstrap credentials
-# @name bootstrapToken
+# @name cmsToken
 POST {{baseUrlConfig}}/connect/token
 Content-Type: application/x-www-form-urlencoded
 
-grant_type=client_credentials&client_id=PilotKitAdmin&client_secret={{CMS_ADMIN_CLIENT_SECRET}}&scope=edfi_admin_api/full_access
+grant_type=client_credentials&client_id=PilotKitAdmin&client_secret={{cmsAdminSecret}}&scope=edfi_admin_api/full_access
+
+### Lookup the existing vendor Id so that we can add a new application to it.
+# @name vendorId
+GET {{baseUrlConfig}}/v3/vendors?company=Pilot+Kit+Bootstrap+(ADMIN)
+Authorization: Bearer {{cmsToken.response.body.access_token}}
 
 ### Create a new application and credentials
 # @name application
 POST {{baseUrlConfig}}/v3/applications
-Authorization: Bearer {{bootstrapToken.response.body.access_token}}
+Authorization: Bearer {{cmsToken.response.body.access_token}}
 Content-Type: application/json
 
 {
     "applicationName": "Data Warehouse",
-    "vendorId": 2,
+    "vendorId": {{vendorId.response.body.0.id}},
     "claimSetName": "DataWarehouse",
     "educationOrganizationIds": [
         99
@@ -51,8 +60,8 @@ Authorization: Bearer {{warehouseToken.response.body.access_token}}
 ### Retrieve the apiClientId to use below in resetting the credentials
 # @name apiClientId
 GET {{baseUrlConfig}}/v3/apiClients?applicationId={{application.response.body.id}}
-Authorization: Bearer {{bootstrapToken.response.body.access_token}}
+Authorization: Bearer {{cmsToken.response.body.access_token}}
 
 ### Reset credentials so that you can copy and use elsewhere
 PUT {{baseUrlConfig}}/v3/apiClients/{{apiClientId.response.body.$[0].id}}/reset-credential
-Authorization: Bearer {{bootstrapToken.response.body.access_token}}
+Authorization: Bearer {{cmsToken.response.body.access_token}}
