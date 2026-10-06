@@ -52,7 +52,7 @@ participant machines with their normal network.
 | `DOTNET_SDK_IMAGE` | `mcr.microsoft.com/dotnet/sdk:10.0.401-noble@sha256:35d40304542c8689331f8cab17c65926cdf48fe711e289321d71924b230a7d29` | MCR registry v2 manifest list (amd64, arm, arm64); same digest as `10.0-noble` on that date |
 | `DOTNET_RUNTIME_IMAGE` | `mcr.microsoft.com/dotnet/runtime:10.0.12-noble@sha256:ff17a18b639a0327e52c7c296fa2e1abe6e03eb61d8121a8ef67cc6aa430a27e` | Same; same digest as `10.0-noble` |
 | `EDFI_NUGET_FLAT_BASE` | `https://pkgs.dev.azure.com/ed-fi-alliance/Ed-Fi-Alliance-OSS/_packaging/EdFi/nuget/v3/flat2` | `PackageBaseAddress/3.0.0` from the feed's `index.json` |
-| `SCHEMATOOLS_VERSION` | `8.0.1-alpha.0.164` | Matches the DMS image `edfialliance/ed-fi-api:8.0.1-alpha.0.164` (plan Decision 2); newest version on the feed on that date |
+| `SCHEMATOOLS_VERSION` | `8.0.1-alpha.0.164` | Newest version on the feed on that date. Used with DMS/CMS `8.1.0-beta1` on purpose for now; CI passes with this pairing |
 | `SCHEMATOOLS_SHA256` | `f44bf7deedc73643a25781250eb9a8f5fd99a4ead9e4838573610b869735c560` | `sha256sum` of the downloaded `.nupkg` |
 | `BULKLOADCLIENT_VERSION` | `7.3.20162` | `$PinnedBulkLoadClientVersion` in DMS `eng/Package-Management.psm1` at commit `0abbaf2c`, which is the source commit of SchemaTools `8.0.1-alpha.0.164` (from its nuspec) |
 | `BULKLOADCLIENT_SHA256` | `8149171a717297314a1b3429f59ca67259df9d458f8537fa6fa8d9170cf6390c` | `sha256sum` of the downloaded `.nupkg` |

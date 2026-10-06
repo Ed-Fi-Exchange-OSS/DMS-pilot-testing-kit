@@ -16,8 +16,12 @@ v8](https://docs.ed-fi.org/reference/ed-fi-api/8/), aka "DMS".
 ## Pre-requisites
 
 * Docker Desktop (Podman and similar _might_ work but are untested)
-* Either Bash or PowerShell Core (both scripts tested in Windows environment running `amd64` containers)
-  * _Should_ also work in PowerShell 5, but that has not been tested.
+* Either Bash or PowerShell 7 (`pwsh`). Both sets of scripts were tested on Windows running
+  `amd64` containers.
+  * Windows PowerShell 5.1 is not supported.
+  * The kit has not been tested on macOS or on arm64 (for example, Apple Silicon).
+* Internet access for the first build and start. See the kit's
+  [prerequisites](./ed-fi-api-v8/README.md#prerequisites) for details.
 * Optional: a client capable of executing request in `.http` files:
   * VS Code [rest-client extension](https://marketplace.visualstudio.com/items?itemName=humao.rest-client) (used / tested by the pilot kit developer)
   * VS Code [httpYac extension](https://marketplace.visualstudio.com/items?itemName=anweber.vscode-httpyac)

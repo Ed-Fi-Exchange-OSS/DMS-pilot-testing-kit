@@ -15,7 +15,10 @@ directory is only a reference; it is git-ignored and will not ship.
 everything tagged FR-COMP, the v7 halves of FR-BOOT-11, FR-CLAIM-13,
 FR-TEST-5 and FR-EDORG-15, log parsing, and reports (FR-MET-\*,
 FR-BOOT-12). FR-LOG work covers configuration only (levels, JSON format,
-mounted directory), not analysis.
+mounted directory), not analysis. Also out of scope, because they only exist
+with the `odsapi` profile (confirmed 2026-10-06, decision D10): FR-TMPL-3, the
+comparative half of NFR-PORT-3, and the ODS/API half of NFR-SEC-2. ODS/API v7
+support will come at a later date.
 
 ## What the existing `dms-compose/` tells us
 

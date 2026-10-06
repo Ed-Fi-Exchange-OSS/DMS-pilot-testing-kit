@@ -8,9 +8,8 @@ Shared PowerShell helpers for the Task 12 lifecycle scripts (start.ps1, stop.ps1
 bootstrap.ps1), available to any later host wrapper that wants them. Dot-source it, don't invoke it:
     . (Join-Path $PSScriptRoot 'scripts/lib.ps1')
 This mirrors scripts/lib.sh function-for-function so the two shells produce the same observable
-behavior (FR-LIFE-3). No cmdlet or syntax here is PowerShell-7-only, so it also runs on Windows
-PowerShell 5.1; only ssl/generate-certificate.ps1's #Requires 7 (for its .NET certificate fallback
-path) is a harder requirement, and only when OpenSSL isn't on PATH.
+behavior (FR-LIFE-3). The kit requires PowerShell 7 (pwsh); Windows PowerShell 5.1 is not
+supported. Each entry-point script declares #Requires -Version 7, so this file doesn't repeat it.
 
 Public API (everything else here is a private helper, prefixed with an underscore):
     $KitDir                              absolute path of ed-fi-api-v8/, computed from this file's
@@ -145,8 +144,8 @@ function Invoke-KitCompose {
 # a string array, for callers that need to parse the result (`ps`, `exec ... psql`).
 # Simple function for the same reason as Invoke-KitCompose above.
 function Get-KitComposeOutput {
-    # 2>$null still turns each stderr line into an ErrorRecord first, which Windows PowerShell 5.1
-    # makes terminating under a caller's 'Stop' (see Invoke-KitComposeTee below).
+    # Defensive: 2>$null can still turn each stderr line into an ErrorRecord first, which must not
+    # become terminating under a caller's 'Stop' (see Invoke-KitComposeTee below).
     $ErrorActionPreference = 'Continue'
     Push-Location $script:KitDir
     try {
@@ -163,9 +162,10 @@ function Get-KitComposeOutput {
 # as for Invoke-KitCompose. Since the output is now a pipe rather than a terminal, Compose shows its
 # plain (line-by-line) progress. Simple function for the same reason as Invoke-KitCompose above.
 function Invoke-KitComposeTee {
-    # With 2>&1, each stderr line arrives as an ErrorRecord, which Windows PowerShell 5.1 turns into
-    # a terminating error under a caller's $ErrorActionPreference = 'Stop' (PowerShell 7 does not).
-    # Compose writes all of its progress to stderr, so relax that for this function's scope only.
+    # With 2>&1, each stderr line arrives as an ErrorRecord. PowerShell 7.2 and later don't apply a
+    # caller's $ErrorActionPreference = 'Stop' to native stderr, but older hosts made it terminating.
+    # Compose writes all of its progress to stderr, so relax that defensively for this function's
+    # scope only.
     $ErrorActionPreference = 'Continue'
     Push-Location $script:KitDir
     try {
@@ -428,8 +428,8 @@ function Initialize-KitDirectories {
 # `docker compose ps --format json` has printed either one JSON object per line, or a single JSON
 # array, depending on the Compose version. ConvertFrom-Json handles a single well-formed document;
 # for line-delimited objects (which aren't one valid document), each line is converted on its own.
-# The `ForEach-Object { $_ }` unrolls the array shape: Windows PowerShell 5.1's ConvertFrom-Json
-# emits a JSON array as one object rather than one object per element.
+# The `ForEach-Object { $_ }` defensively unrolls the array shape, so a JSON array always yields one
+# object per element whatever the host's ConvertFrom-Json does with it.
 function Get-KitComposeContainers {
     $raw = Get-KitComposeOutput ps -a --format json
     $text = ($raw -join "`n").Trim()

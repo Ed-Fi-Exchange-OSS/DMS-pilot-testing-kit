@@ -190,9 +190,10 @@ graph TD
 - **Data initialization:** both the DMS and ODS/API datastores are initialized
   from one of two templates, chosen before first startup. The "minimal
   template" (descriptors only, no sample data) is the default and suits
-  write-oriented SIS and assessment integrations. The "populated template" adds
-  the Ed-Fi sample data set and exists for downstream data warehouse and
-  analytics integrations, which need data present before they can extract
+  write-oriented SIS integrations. The "populated template" adds the Ed-Fi
+  sample data set and exists for assessment integrations, which need students
+  and education organizations to reference, and for downstream data warehouse
+  and analytics integrations, which need data present before they can extract
   anything.
 - **Bootstrapping:** because an integration credential must be scoped to an
   education organization, and the minimal template contains none, startup
@@ -267,20 +268,17 @@ client integrations need opposite starting conditions.
 - **FR-TMPL-5:** Documentation SHALL state that changing the template requires
   the destructive reset described in FR-LIFE-6, and the reset SHALL be
   sufficient to switch templates without manual database surgery.
-- **FR-TMPL-6:** Documentation SHALL recommend a template per integration
-  shape: minimal for SIS and assessment write integrations, populated for
-  downstream data warehouse and analytics read integrations.
-- **FR-TMPL-7:** Startup SHALL fail with an actionable message, rather than
+- **FR-TMPL-6:** Startup SHALL fail with an actionable message, rather than
   silently falling back to the minimal template, when the populated template is
   requested but its source data is missing or unreadable.
-- **FR-TMPL-8:** Documentation SHALL describe the populated template's contents
+- **FR-TMPL-7:** Documentation SHALL describe the populated template's contents
   well enough for a read-oriented participant to know what to expect — which
   education organizations, roughly how many students, and which resources carry
   data.
-- **FR-TMPL-9:** The populated template SHALL be usable as a starting point for
+- **FR-TMPL-8:** The populated template SHALL be usable as a starting point for
   write testing as well, since assessment integrations need pre-existing
   students and education organizations to reference.
-- **FR-TMPL-10:** Documentation SHALL state the additional download, disk, and
+- **FR-TMPL-9:** Documentation SHALL state the additional download, disk, and
   startup-time cost of the populated template relative to the minimal template.
 
 ### 3.4 API Feature Availability
@@ -302,7 +300,7 @@ complete and identical across participants.
   that authorization behavior observed by a participant matches the documented
   default. The kit MAY add claim sets that the platform does not supply, as
   specified in section 3.6, but SHALL NOT alter the ones it does.
-- **FR-FEAT-9:** Any feature in this section that cannot be enabled in the
+- **FR-FEAT-10:** Any feature in this section that cannot be enabled in the
   pilot release SHALL be recorded as a known limitation in the kit's
   documentation rather than silently omitted.
 
@@ -386,7 +384,7 @@ has no standard claim set at all.
   extraction credential cannot mutate the data it reads.
 - **FR-CLAIM-7:** The kit SHALL NOT modify any standard claim set. The Data
   Warehouse claim set SHALL be an addition, leaving the standard set intact per
-  FR-FEAT-8.
+  FR-FEAT-9.
 - **FR-CLAIM-8:** Provisioning of the Data Warehouse claim set SHALL be part of
   bootstrapping, SHALL be idempotent, and SHALL fail startup with an actionable
   message rather than leaving a warehouse participant without a usable claim
@@ -719,8 +717,21 @@ created on their behalf rather than inheriting an opaque seeded state.
 - **NFR-SEC-5:** By default the stack SHALL bind only to the local host, and
   documentation SHALL state what changes if a participant exposes it on their
   network.
-- **NFR-SEC-6:** The kit SHALL make no outbound network calls other than
-  pulling images and whatever the platform services require to start.
+- **NFR-SEC-6:** Once built and initialized, the kit SHALL make no outbound
+  network calls at runtime. Building and first starting the kit requires the
+  following outbound calls, and documentation SHALL list them so that a
+  participant on a restricted network knows what to allow:
+  - pulling the pinned container images;
+  - building the local tools image, which downloads the Ed-Fi SchemaTools and
+    BulkLoadClient packages from the Ed-Fi Azure Artifacts NuGet feed and
+    installs Ubuntu packages through apt;
+  - downloading the Ed-Fi Data Standard 5.2 release archive from GitHub on the
+    first initialization of either template, after which it is cached in a
+    local volume until a reset removes it.
+
+  One runtime exception is documented: the browser-based Swagger UI loads its
+  pinned `swagger-ui-dist` assets from unpkg.com, so the participant's browser,
+  not the kit's containers, contacts unpkg.com when Swagger UI is opened.
 - **NFR-SEC-7:** The repository SHALL retain its existing supply-chain
   workflows, and images SHALL be pulled from official Ed-Fi Alliance published
   locations.

@@ -46,7 +46,18 @@ If you want the rationale behind how the kit is built rather than how to use it,
 
 - **Docker and Compose.** Docker Desktop (Windows or macOS) or Docker Engine (Linux), with
   Compose 2.20 or later (check with `docker compose version`). This kit was verified with Docker
-  Desktop 29.7.2.
+  Desktop 29.7.2 on Windows, on an amd64 host.
+- **Bash or PowerShell 7.** Every script comes as a `.sh` and a `.ps1`. The `.ps1` scripts need
+  PowerShell 7 or later; run them from `pwsh`, not `powershell`. Windows PowerShell 5.1 isn't
+  supported. Check your version with `$PSVersionTable`.
+- **An amd64 machine, ideally.** The kit hasn't been tested on macOS or on arm64 (for example,
+  Apple Silicon Macs). It may work there, but nobody has checked.
+- **Internet access for the first build and start.** Docker pulls the container images, and the
+  `tools` image build downloads packages from the Ed-Fi Azure Artifacts NuGet feed
+  (`pkgs.dev.azure.com`) and Ubuntu's apt repositories. On first start, and again on the first
+  start after a `reset`, the kit downloads the Ed-Fi Data Standard from GitHub. Once the kit is
+  built and started, it makes no outbound calls of its own. The one exception is your browser:
+  Swagger UI loads its files from `unpkg.com`.
 - **Free host ports**, all configurable in `.env` if they're already taken on your machine:
   - `80` (`HTTP_PORT`) -- redirects to HTTPS
   - `443` (`HTTPS_PORT`) -- the kit's HTTPS ingress
@@ -55,8 +66,7 @@ If you want the rationale behind how the kit is built rather than how to use it,
   CMS, DMS, and a `tools` image built from a .NET SDK base image on first start), plus the database
   volume itself: roughly 130 MB total for the **minimal** template, or roughly 700 MB total for the
   **populated** template (measured during kit verification; see
-  [The populated template](#the-populated-template) for the full breakdown). No separate minimum RAM
-  figure is documented here -- see this document's final report for that gap.
+  [The populated template](#the-populated-template) for the full breakdown).
 - **A TLS certificate.** `./start.sh` (or `.ps1`) generates a local, self-signed one for you under
   `ssl/` automatically if it doesn't already exist. You can also run `ssl/generate-certificate.sh`
   (or `.ps1`) yourself first if you'd rather do it as a separate step.
@@ -88,7 +98,7 @@ detail on every claim set.
 ## Setup
 
 Each step below says what to run and what to expect before moving to the next one. Bash and
-PowerShell commands behave identically.
+PowerShell 7 commands behave identically.
 
 ### 1. Clone and change into the kit directory
 
@@ -130,7 +140,8 @@ doesn't exist (with generated secrets, as above), generates the TLS certificate 
 `.runtime/` and the log directory, and runs `docker compose up -d --build --wait`. **The first run
 can take a few minutes**: pulling images, building the `tools` image, provisioning the database schema, and
 loading the starting template all happen before the command returns. On the `populated` template,
-budget an extra ~5 minutes for the sample data load (see
+budget about 8 minutes for a clean first start, about 5.3 minutes of which is the sample data load
+(see
 [The populated template](#the-populated-template)).
 
 On success, you'll see something close to this:
@@ -385,10 +396,10 @@ to already be there. It adds:
 - **960 students**, 1,873 contacts, 68 staff, 40,320 grades, 13,667 course transcripts, 13,440
   student section associations, and 71 student health records
 
-**Cost relative to the minimal template** (FR-TMPL-10, NFR-PORT-5): about +5 minutes on the first
-start, about +140 MB of database size (about 194 MB total), and about +570 MB of volume size on
-disk (about 700 MB total for `db-data`). It contains **only the published Ed-Fi synthetic sample
-data** -- no real student records of any kind.
+**Cost relative to the minimal template** (FR-TMPL-10, NFR-PORT-5): about 5 - 6 minutes of sample
+data loading on the first start (about 8 minutes for a whole clean start), about +140 MB of database
+size (about 194 MB total), and about +570 MB of volume size on disk (about 700 MB total for `db-data`).
+It contains **only the published Ed-Fi synthetic sample data** -- no real student records of any kind.
 
 These are single-host measurements, not a performance benchmark (NFR-PERF-4): a single-machine
 Compose environment is not a performance-representative deployment, so don't read throughput or
@@ -452,17 +463,27 @@ failures, each with the exact command or message to look for.
 
 ## Known limitations
 
-- **The comparative Ed-Fi ODS/API 7.3.2 environment described in the PRD is not part of this kit.**
-  The `odsapi` Compose profile, ODS Admin API, and every requirement tagged `FR-COMP` are explicitly
-  out of scope for this build, as are the v7 halves of a few other requirements.
+- **The comparative Ed-Fi ODS/API 7.3.2 environment described in the PRD is not in this version.**
+  The `odsapi` Compose profile, ODS Admin API, and every requirement tagged `FR-COMP` are out of
+  scope for this build, as are the v7 halves of a few other requirements. ODS/API v7 comparison
+  support is planned for a later version.
 - **There is no scripted metrics/reporting tooling.** Log parsing and run reports (PRD section
   3.11, `FR-MET-*`) are explicitly out of scope for this build; error counts, record counts, and
   timing are things you'll need to assemble yourself from the logs described above.
-- **arm64 is untested.** Every build and measurement in this kit's verification was done on an
-  amd64 host; the locally built `tools` image in particular has not been built or run on arm64.
-- **Swagger UI's "Try it out" has not been verified in-browser.** The equivalent same-origin
-  `curl` calls (token, then an authenticated `GET`) pass; the interactive browser flow with a
-  pasted token has not been separately checked.
+- **DMS and CMS logs aren't written to the log directory, for now.** Only NGINX writes there. Read
+  DMS and CMS logs with `docker compose logs dms` / `docker compose logs cms` (see [Logs](#logs)).
+  Docker's log rotation can discard older lines.
+- **macOS and arm64 are untested.** Every build and measurement in this kit's verification was done
+  on Windows, on an amd64 host. The kit has not been run on macOS, and the locally built `tools`
+  image has not been built or run on arm64 (for example, Apple Silicon Macs).
+- **Minimum RAM and CPU haven't been measured.** The kit doesn't publish a RAM or CPU requirement.
+- **The first build and start need internet access.** See [Prerequisites](#prerequisites) for what
+  the kit downloads. After that, only your browser reaches out, to load Swagger UI from `unpkg.com`.
+- **Swagger UI needs internet access in your browser.** If your network blocks `unpkg.com`,
+  `/swagger/` won't render. The rest of the kit is unaffected.
+- **Swagger UI leaves `pageSize` empty.** DMS advertises a default `pageSize` of 500, but rejects
+  `pageSize` without `pageToken`. So the kit's Swagger UI removes that default. To page with a
+  cursor in Swagger UI, fill in both. Upstream issue: DMS-1588.
 - **A claim set change on an already-running stack can take up to 10 minutes to take effect** if you
   don't call the reload endpoint described [above](#applying-a-claim-set-change-immediately) -- the
   kit's own `DataWarehouse` claim set avoids this by importing before DMS starts, but a claim set

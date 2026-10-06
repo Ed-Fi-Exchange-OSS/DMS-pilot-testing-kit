@@ -34,7 +34,8 @@ The sandbox still has no Docker daemon, so new work is drafted here and verified
   a host QA run on clean volumes, both templates, Bash and PowerShell 7: lifecycle scripts, all
   three credential shapes with first requests, name reuse, CMS down, smoke test (including with
   DMS stopped), and both `.http` files in REST Client. `smoke.http` step 10 now uses the
-  `uri://ed-fi.org` namespace. Windows PowerShell 5.1 was not part of the run.
+  `uri://ed-fi.org` namespace. Windows PowerShell 5.1 was not part of the run, and is unsupported
+  as of 2026-10-06 (PowerShell 7 is required, decision D8).
 - Task 16: done (2026-10-01). `ed-fi-api-v8/README.md` plus `docs/credentials-and-claim-sets.md` and
   `docs/troubleshooting.md`; root `README.md` links to it. FR-DOC coverage checklist is under Task 16
   below; the one real gap found (NFR-PERF-4) is fixed. `markdownlint-cli2` reports only the same
@@ -61,7 +62,8 @@ The sandbox still has no Docker daemon, so new work is drafted here and verified
   fails as expected. Task 17 is done.
 - PR #5 review and CI fixes (2026-10-04); CI and a host run pass with all of them in place, but the
   new failure report has only been exercised against a fake `docker` (see Task 4), and the
-  Windows PowerShell 5.1 stderr fix in `Get-KitComposeOutput` is untested on 5.1:
+  Windows PowerShell 5.1 stderr fix in `Get-KitComposeOutput` never ran on 5.1, which is
+  unsupported as of 2026-10-06:
   - Startup requires Docker Compose 2.20+ (top-level `include`); the start scripts check it.
   - `swagger-ui` depends on `init-bootstrap` (`service_completed_successfully`) and the tools image
     no longer sets `HEALTHCHECK NONE`. Without both, `up --wait` failed on the runner's Compose
@@ -77,7 +79,12 @@ The sandbox still has no Docker daemon, so new work is drafted here and verified
     `pageSize` without `pageToken`. Upstream: DMS-1588. Known-limitations candidate (Checkpoint E).
 - Task 15's two host checks (DMS log level, correlation ID in NGINX and DMS logs) pass on the host
   (2026-10-05).
-- Next: Checkpoint E.
+- Checkpoint E decisions (2026-10-06): the maintainer answered D1–D12 in
+  [traceability.md](./traceability.md), and they're applied. The PRD drops FR-TMPL-6, renumbers the
+  second FR-FEAT-9 to FR-FEAT-10, and clarifies NFR-SEC-6; PowerShell 7 is required; RAM/CPU
+  figures, file logs for DMS and CMS, and a macOS/arm64 run are known limitations. Human review is
+  still pending.
+- Next: Checkpoint E human review.
 
 ---
 
@@ -311,7 +318,7 @@ internet access: record it as a known limitation, or vendor the files.
 
 ### Checkpoint B
 - [ ] All participant URLs work over HTTPS; the PRD feature list in 3.4 is spot-checked (change queries, ETag, paging, Profiles)
-- [ ] Any feature that can't be enabled is written down for the known-limitations doc (FR-FEAT-9b).
+- [ ] Any feature that can't be enabled is written down for the known-limitations doc (FR-FEAT-10).
       The spike found every 3.4 feature on by default, with no flags (spike-notes Q8).
 
 ---
@@ -709,7 +716,7 @@ feature is out of scope, per `plan.md`, not by describing it as available.
 | FR-LIFE-3 (one workflow, not two) | README Setup: "Bash and PowerShell commands behave identically" |
 | FR-LIFE-8 (startup prints URLs/template/next step) | README Setup step 3, quoted `start` output |
 | FR-TMPL-5 (template switch needs reset) | README "Stopping, resetting, and switching templates" |
-| FR-TMPL-6 (template per shape) | README "Which instructions apply to you" -- **note:** FR-TMPL-6's own text ("minimal ... for assessment") contradicts FR-TMPL-9 two bullets later ("assessment integrations need pre-existing students and education organizations to reference"); the kit follows FR-TMPL-9's reasoning (assessment → populated), which also matches the Phase 0 spike and the shipped `new-credential` defaults. This looks like a PRD drafting inconsistency, not a kit gap -- flagging for a human decision on which bullet is authoritative. |
+| FR-TMPL-6 (template per shape) | Removed from the PRD on 2026-10-06 (decision D1). Its text ("minimal ... for assessment") contradicted FR-TMPL-9; FR-TMPL-9 is authoritative (assessment → populated), as the kit already did. The per-shape template recommendation is still required by FR-DOC-8 and covered by README "Which instructions apply to you". |
 | FR-TMPL-8 (populated contents) | README "The populated template" |
 | FR-TMPL-10 (populated cost) | README "The populated template" |
 | FR-BOOT-7/8 (bootstrap credential labeled administrative, not for integration testing, permissions stated) | README "The bootstrap (admin) credential" |

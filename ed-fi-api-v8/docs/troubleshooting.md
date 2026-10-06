@@ -20,13 +20,13 @@ host port is published by this kit.
   shipped certificate's Subject Alternative Names are only `localhost`, `nginx`, and `127.0.0.1`.
   Regenerate it to include your hostname:
 
-  ```bash
+  ```shell
   # Bash
   ./ssl/generate-certificate.sh --force
   docker compose restart nginx
 
-  # PowerShell  
-  .\ssl\generate-certificate.ps1 -Force
+  # PowerShell
+  ./ssl/generate-certificate.ps1 -Force
   docker compose restart nginx
   ```
 
