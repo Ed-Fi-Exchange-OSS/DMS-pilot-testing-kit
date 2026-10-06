@@ -421,6 +421,12 @@ A=$(curl -sk https://localhost/config/connect/token --data-urlencode grant_type=
 
 ### Host check before distribution
 
+`tasks/host-checks.sh all` runs every row below except pgAdmin and FR-DOC-7 (`list` shows the
+check names, which can also be run one at a time). It backs up and restores `.env` around the checks
+that change it; `bad-checksum` resets the stack. One correction to the Profiles row: a Profile only
+applies to an application it's assigned to (spike-notes, Profiles: assign), so the script creates its
+own vendor and application with `profileIds` instead of using the bootstrap credential.
+
 | Item | Command(s) |
 | --- | --- |
 | T3 `todo:183` invalid secret fails `init-identity`, naming the variable; **also** T4 `todo:233` and FR-LIFE-9 (failure report names the service) | Back up `.env`, set `CMS_ADMIN_CLIENT_SECRET=short` in `.env`, run `./start.sh; echo "exit=$?"`. Expect a non-zero exit, `FAILED: init-identity`, and a log line naming `CMS_ADMIN_CLIENT_SECRET`. Restore `.env` and run `./start.sh` |

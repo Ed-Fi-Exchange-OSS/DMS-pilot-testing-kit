@@ -84,7 +84,14 @@ The sandbox still has no Docker daemon, so new work is drafted here and verified
   second FR-FEAT-9 to FR-FEAT-10, and clarifies NFR-SEC-6; PowerShell 7 is required; RAM/CPU
   figures, file logs for DMS and CMS, and a macOS/arm64 run are known limitations. Human review is
   still pending.
-- Next: Checkpoint E human review.
+- Checkpoint E host checks (2026-10-06): `tasks/host-checks.sh all` passed on the host, apart from
+  one false failure in the script's own 301 parsing (fixed; CI's `http-redirect` step covers the
+  301). The maintainer confirmed pgAdmin's preconfigured server by hand. Items ticked on this date
+  rest on that run. The DataWarehouse "every resource" item was checked on students, their
+  `/deletes`, and schools, not a full sweep. Still open by choice, per traceability.md's "Accept"
+  table: TPDM restaging, byte-identical standard claim sets, the volume-size remeasure, and the two
+  "scripted check in the smoke test" items.
+- Next: a fresh reviewer follows the README (FR-DOC-7), then the Checkpoint E human review.
 
 ---
 
@@ -131,9 +138,14 @@ health checks, and `127.0.0.1` bindings. Create a commented `.env.example` with 
 
 **Acceptance criteria:**
 - [x] `docker compose config` succeeds using only `.env.example` copied to `.env` (2026-10-04)
-- [ ] Every image is a pinned tag or digest supplied through `.env` (FR-PLAT-5)
-- [ ] Health checks have bounded `retries`/`start_period`; no fixed sleeps (NFR-REL-1/2)
-- [ ] License headers on all files (NFR-MAINT-4); `.gitignore` covers `.env`, `.runtime/`, `logs/`, `ssl/*.key`
+- [x] Every image is a pinned tag or digest supplied through `.env` (FR-PLAT-5) -- static check
+      2026-10-06: every `image:` is a required `${..._IMAGE}` pinned by digest in `.env.example`,
+      except the locally built `edfi-pilot-tools:local`, whose base images are pinned the same way
+- [x] Health checks have bounded `retries`/`start_period`; no fixed sleeps (NFR-REL-1/2) -- static
+      check 2026-10-06: every health check has `retries`; the only `sleep`s are bounded retry loops
+      (`init/identity.sh`, `init/new-credential.sh`)
+- [x] License headers on all files (NFR-MAINT-4); `.gitignore` covers `.env`, `.runtime/`, `logs/`, `ssl/*.key`
+      -- static check 2026-10-06: every tracked kit source file has an SPDX header
 
 **Verification:**
 - [x] `docker compose up -d db config` → both healthy (spike, clean run 2)
@@ -178,13 +190,13 @@ Pass values to SQL as psql variables (`-v name=value`, `:'name'`), never by stri
 **Acceptance criteria:**
 - [x] Clean start: CMS `/connect/token` issues a `PilotKitAdmin` token, and DMS logs no 401 from CMS
 - [x] Second `up` makes no new key or client rows, and exits 0
-- [ ] Changing a client secret in `.env` and running `up` again updates only that client; the old
+- [x] Changing a client secret in `.env` and running `up` again updates only that client; the old
       secret stops working and the new one works
-- [ ] An invalid secret in `.env` fails `init-identity` with a message naming the variable
-- [ ] Secrets come from `.env`, never hard-coded, and never appear in logs
+- [x] An invalid secret in `.env` fails `init-identity` with a message naming the variable
+- [x] Secrets come from `.env`, never hard-coded, and never appear in logs
 
 **Verification:**
-- [ ] `docker compose up --wait` twice; `SELECT count(*)` from the key and application tables is unchanged
+- [x] `docker compose up --wait` twice; `SELECT count(*)` from the key and application tables is unchanged
 
 **Dependencies:** Task 2
 **Files likely touched:** `ed-fi-api-v8/compose.init.yml`, `ed-fi-api-v8/init/identity.sh`, `ed-fi-api-v8/init/lib.sh`
@@ -230,13 +242,15 @@ Also:
 - [x] `dms."EffectiveSchema"` hash is `a0d39468ef30d3e99273065256bfffa42b799404ca5fbc09a8648f349d9217e1`
 - [x] Re-run doesn't re-register the data store, restage the volume, or re-provision
 - [ ] A volume pre-filled with TPDM (from copy-up) is detected and restaged as core only
-- [ ] Failure of any init step makes `up --wait` fail and names the service -- the start scripts'
+- [x] Failure of any init step makes `up --wait` fail and names the service -- the start scripts'
       failure report was rewritten 2026-10-04 and tested only against a fake `docker`; needs a
       host run with an init step forced to fail
 - [x] `GET /api/metadata/xsd/ed-fi/files` and `/api/metadata/specifications/discovery-spec.json` return 200
 
 **Verification:**
-- [ ] Manual: create a vendor and application via CMS by hand, get a token, and `GET` a descriptor list → 200
+- [x] Manual: create a vendor and application via CMS by hand, get a token, and `GET` a descriptor list → 200
+      -- superseded by Task 13: `new-credential` does exactly this and makes a first request (host
+      QA 2026-10-05)
 
 **Dependencies:** Task 3
 **Files likely touched:** `ed-fi-api-v8/compose.core.yml`, `ed-fi-api-v8/compose.init.yml`, `ed-fi-api-v8/.env.example`, `ed-fi-api-v8/init/api-schema.sh`, `ed-fi-api-v8/init/datastore.sh`, `ed-fi-api-v8/init/provision-schema.sh`
@@ -263,10 +277,10 @@ Add `ssl/generate-certificate.sh` and `.ps1`, with SANs for localhost. Set
 DMS/CMS `PathBase` and forwarded-header trust. Make host ports configurable.
 
 **Acceptance criteria:**
-- [ ] `curl -k https://localhost/api` Discovery shows `https://localhost/...` URLs (FR-ROUTE-4)
-- [ ] `http://` → 301 to https; stopping DMS returns 503, not 502 (FR-ROUTE-9). Both seen in the
+- [x] `curl -k https://localhost/api` Discovery shows `https://localhost/...` URLs (FR-ROUTE-4)
+- [x] `http://` → 301 to https; stopping DMS returns 503, not 502 (FR-ROUTE-9). Both seen in the
       spike (Q10); recheck after Checkpoint A
-- [ ] Missing certificate files → nginx fails with an actionable message, and the cert script fixes it
+- [x] Missing certificate files → nginx fails with an actionable message, and the cert script fixes it
 
 **Verification:**
 - [x] Token via `https://localhost/api/oauth/token`, then an authenticated GET, both through NGINX -- host QA 2026-10-05 (Checkpoint D run, every first request)
@@ -283,11 +297,11 @@ and burst variables. Implement both by rendering include files at container star
 edits (FR-ROUTE-5/6/8).
 
 **Acceptance criteria:**
-- [ ] `GET /data/v3/ed-fi/schools` returns the same body as `/api/data/ed-fi/schools` when enabled; 404 when disabled
-- [ ] With rate limiting enabled at a low rate, a burst yields 429s; default config yields none
+- [x] `GET /data/v3/ed-fi/schools` returns the same body as `/api/data/ed-fi/schools` when enabled; 404 when disabled
+- [x] With rate limiting enabled at a low rate, a burst yields 429s; default config yields none
 
 **Verification:**
-- [ ] Both toggles are exercised with `curl`
+- [x] Both toggles are exercised with `curl`
 
 **Dependencies:** Task 5
 **Files likely touched:** `ed-fi-api-v8/nginx/*.template`, `ed-fi-api-v8/nginx/entrypoint.sh`, `.env.example`
@@ -306,19 +320,20 @@ internet access: record it as a known limitation, or vendor the files.
 **Acceptance criteria:**
 - [x] `/swagger` loads the Resources and Descriptors specs and "Try it out" succeeds with a token (FR-FEAT-3)
       -- host browser check 2026-10-04, after the `pageSize` default fix (DMS-1588)
-- [ ] `/pgadmin` shows the preconfigured server
-- [ ] XSD and OpenAPI metadata endpoints are reachable under `/api/metadata`
+- [x] `/pgadmin` shows the preconfigured server
+- [x] XSD and OpenAPI metadata endpoints are reachable under `/api/metadata` -- same check as
+      Task 4's metadata item, and Swagger UI loads the specs from there (host 2026-10-04)
 
 **Verification:**
-- [ ] Manual browser check of both UIs
+- [x] Manual browser check of both UIs
 
 **Dependencies:** Task 5
 **Files likely touched:** `ed-fi-api-v8/swagger-ui/*`, `ed-fi-api-v8/pgadmin/servers.json`, `ed-fi-api-v8/compose.yml`, nginx template
 **Estimated scope:** M
 
 ### Checkpoint B
-- [ ] All participant URLs work over HTTPS; the PRD feature list in 3.4 is spot-checked (change queries, ETag, paging, Profiles)
-- [ ] Any feature that can't be enabled is written down for the known-limitations doc (FR-FEAT-10).
+- [x] All participant URLs work over HTTPS; the PRD feature list in 3.4 is spot-checked (change queries, ETag, paging, Profiles)
+- [x] Any feature that can't be enabled is written down for the known-limitations doc (FR-FEAT-10).
       The spike found every 3.4 feature on by default, with no flags (spike-notes Q8).
 
 ---
@@ -346,12 +361,15 @@ From the spike (Q9):
 - Fail on a non-zero BulkLoadClient exit.
 
 **Acceptance criteria:**
-- [ ] Clean start with the default → descriptor endpoints are populated; no education organizations exist
+- [x] Clean start with the default → descriptor endpoints are populated -- CI minimal smoke
+      `descriptor-list` step. (The original "no education organizations exist" no longer applies:
+      Task 10 creates the baseline hierarchy on every start.)
 - [x] Restart does not reload; changing `DATABASE_TEMPLATE` without a reset prints "requires reset" and does not reload
-- [ ] Partial failure leaves no marker, so the next start retries
+- [x] Partial failure leaves no marker, so the next start retries
 
 **Verification:**
-- [ ] `GET /api/data/ed-fi/gradeLevelDescriptors` count > 0; marker row is present
+- [x] `GET /api/data/ed-fi/gradeLevelDescriptors` count > 0; marker row is present -- smoke
+      `descriptor-list` reads `gradeLevelDescriptors`; `start` prints the template from the marker row
 
 **Dependencies:** Checkpoint A
 **Files likely touched:** `ed-fi-api-v8/init/template.sh`, `ed-fi-api-v8/compose.yml`, `.env.example`
@@ -377,12 +395,12 @@ From the spike (Q9):
 
 **Acceptance criteria:**
 - [x] Clean start with `populated` → students and the sample education organizations are present
-- [ ] A corrupted or missing archive fails startup with a message naming the file and the fix; no silent fallback
+- [x] A corrupted or missing archive fails startup with a message naming the file and the fix; no silent fallback
 - [ ] Measured load time and volume size are recorded for docs (FR-TMPL-10, NFR-PORT-5). Load time:
       about 200 s for a clean populated `up` on the host; volume size not yet re-measured
 
 **Verification:**
-- [ ] `GET /api/data/ed-fi/students?totalCount=true` shows the expected count
+- [x] `GET /api/data/ed-fi/students?totalCount=true` shows the expected count
 
 **Dependencies:** Task 8
 **Files likely touched:** `ed-fi-api-v8/init/template.sh`, `.env.example`
@@ -410,7 +428,8 @@ can't read arbitrary students.
 **Acceptance criteria:**
 - [x] Clean minimal start → 5 education organizations exist; credentials file written with IDs
 - [x] Re-run → no duplicate vendor, application, or education organizations; missing records are recreated (FR-BOOT-4/5)
-- [ ] Works on the populated template too, with IDs that don't collide (FR-EDORG-8)
+- [x] Works on the populated template too, with IDs that don't collide (FR-EDORG-8) -- CI populated
+      dispatch runs 37341471550 and 37484506077, and host QA 2026-10-05 (`qa.D.md` Part 3)
 
 **Verification:**
 - [x] `GET /api/data/ed-fi/schools?localEducationAgencyId=<LEA>` → 3 schools
@@ -440,9 +459,9 @@ From the spike (Q6) and decision 8 in plan.md:
   Task 18 covers imports on a running stack.
 
 **Acceptance criteria:**
-- [ ] `GET /config/v3/claimSets` lists `DataWarehouse`; its authorization metadata shows only Read
+- [x] `GET /config/v3/claimSets` lists `DataWarehouse`; its authorization metadata shows only Read
       and ReadChanges
-- [ ] A DataWarehouse credential with no education organization IDs can GET every resource and its
+- [x] A DataWarehouse credential with no education organization IDs can GET every resource and its
       `/deletes`, including students outside the baseline organizations on the populated template;
       POST, PUT, and DELETE return 403
 - [x] The first request with a new DataWarehouse credential after a clean start returns 200, not 500 -- host QA 2026-10-05 (Checkpoint D run, clean minimal start)
@@ -488,11 +507,11 @@ so that both bootstrap and participants can apply claim set changes immediately 
       credential with that claim set succeed immediately, with no 500 and no restart
 - [x] The endpoint rejects a participant integration credential (401 or 403) and an anonymous request
 - [x] With the `.env` switch off, the endpoint isn't available (404), and the rest of the stack is unchanged
-- [ ] Bootstrap on a running stack calls the endpoint after changing a claim set, and a failure
+- [x] Bootstrap on a running stack calls the endpoint after changing a claim set, and a failure
       names the step (FR-BOOT-9)
 
 **Verification:**
-- [ ] Manual: import a throwaway claim set, reload, then GET with a credential that uses it → 200 at once
+- [x] Manual: import a throwaway claim set, reload, then GET with a credential that uses it → 200 at once
 - [ ] Scripted check in the smoke test (Task 14)
 
 **Dependencies:** Task 11 (and Task 5 for the NGINX route)
@@ -500,7 +519,8 @@ so that both bootstrap and participants can apply claim set changes immediately 
 **Estimated scope:** S
 
 ### Checkpoint C
-- [ ] Reset, then start on minimal; reset, then start on populated; each followed by a second start: no errors and no duplicates
+- [x] Reset, then start on minimal; reset, then start on populated; each followed by a second start: no errors and no duplicates
+      -- passed on the host (see Status); the box was missed at the time
 
 ---
 
@@ -768,5 +788,8 @@ a `:z` label; test there before relying on it.
 **Estimated scope:** S
 
 ### Checkpoint E
-- [ ] All in-scope PRD requirements are traced to a task or recorded as a known limitation
+- [x] All in-scope PRD requirements are traced to a task or recorded as a known limitation --
+      [traceability.md](./traceability.md) (2026-10-06): 180 requirements, 0 gaps, 17 implemented but
+      not yet seen on a host (see its "Host check before distribution" table and
+      `tasks/host-checks.sh`)
 - [ ] Human review, then ready for participant distribution
