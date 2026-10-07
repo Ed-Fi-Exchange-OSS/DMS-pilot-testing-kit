@@ -7,6 +7,8 @@ ed-fi-api-v8/.env
 ed-fi-api-v8/.runtime/*
 !ed-fi-api-v8/.runtime/.gitkeep
 ed-fi-api-v8/logs/
+# Optional REST Client dotenv file holding credentials for http/*.http
+ed-fi-api-v8/http/.env
 ed-fi-api-v8/ssl/server.crt
 ed-fi-api-v8/ssl/server.key
 # Left behind only if tasks/host-checks.sh is interrupted mid-check

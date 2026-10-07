@@ -23,21 +23,17 @@ exact value to set if the two disagree.
   client code](../README.md#trusting-the-certificate-from-your-own-client-code) in the main README
   for the `curl`/.NET/Python/Node approaches.
 - **You changed the hostname you use to reach the kit** (something other than `localhost`): the
-  shipped certificate's Subject Alternative Names are only `localhost`, `nginx`, and `127.0.0.1`.
-  Regenerate it to include your hostname:
+  shipped certificate generators (`ssl/generate-certificate.sh` and `.ps1`) hard-code the names the
+  certificate is valid for -- its Subject Alternative Names are only `localhost`, `nginx`, and
+  `127.0.0.1` -- so regenerating it does not add your hostname. To use another hostname, supply your
+  own `ssl/server.crt` and `ssl/server.key` whose SANs include it, then restart NGINX:
 
   ```shell
-  # Bash
-  ./ssl/generate-certificate.sh --force
-  docker compose restart nginx
-
-  # PowerShell
-  ./ssl/generate-certificate.ps1 -Force
   docker compose restart nginx
   ```
 
-- **`ssl/generate-certificate.(sh | ps1)` refuses to run:** it won't overwrite an existing `server.crt` or
-  `server.key` without `--force`/`-Force`. That's deliberate -- confirm you actually want to replace
+- **`ssl/generate-certificate.(sh | ps1)` refuses to run:** when both `server.crt` and
+  `server.key` already exist, it won't overwrite them without `--force`/`-Force`. That's deliberate -- confirm you actually want to replace
   the certificate (every client that trusted the old one will need to trust the new one too) before
   passing it.
 - **NGINX fails to start citing a missing certificate:** `start` generates one automatically if

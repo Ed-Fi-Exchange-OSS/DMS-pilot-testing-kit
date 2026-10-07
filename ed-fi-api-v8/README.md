@@ -46,7 +46,8 @@ If you want the rationale behind how the kit is built rather than how to use it,
 
 - **Docker and Compose.** Docker Desktop (Windows or macOS) or Docker Engine (Linux), with
   Compose 2.20 or later (check with `docker compose version`). This kit was verified with Docker
-  Desktop 29.7.2 on Windows, on an amd64 host.
+  Engine 29.7.2 (via Docker Desktop on Windows) on an amd64 host. Docker Engine 28.3.2 with
+  Compose 2.38.2 also worked in an independent walkthrough.
 - **Bash or PowerShell 7.** Every script comes as a `.sh` and a `.ps1`. The `.ps1` scripts need
   PowerShell 7 or later; run them from `pwsh`, not `powershell`. Windows PowerShell 5.1 isn't
   supported. Check your version with `$PSVersionTable`.
@@ -149,8 +150,8 @@ doesn't exist (with generated secrets, as above), generates the TLS certificate 
 `.runtime/` and the log directory, and runs `docker compose up -d --build --wait`. **The first run
 can take a few minutes**: pulling images, building the `tools` image, provisioning the database schema, and
 loading the starting template all happen before the command returns. On the `populated` template,
-budget about 8 minutes for a clean first start, about 5.3 minutes of which is the sample data load
-(see
+budget about 3-8 minutes for a clean first start, of which roughly 2-5 minutes is the sample data
+load (see
 [The populated template](#the-populated-template)).
 
 On success, you'll see something close to this:
@@ -214,7 +215,7 @@ Credential "my-sis-client" created (shape=sis, claimSet=SISVendor)
 Key:       <generated>
 Secret:    <generated>
 Token URL: https://localhost/api/oauth/token
-Saved to:  ed-fi-api-v8/.runtime/credentials/my-sis-client.json
+Saved to:  <kit folder>/.runtime/credentials/my-sis-client.json
 WARNING: this secret cannot be recovered later -- store it now.
 ---------------------------------------------------------------
 ```
@@ -454,8 +455,8 @@ to already be there. It adds:
 - **960 students**, 1,873 contacts, 68 staff, 40,320 grades, 13,667 course transcripts, 13,440
   student section associations, and 71 student health records
 
-**Cost relative to the minimal template** (FR-TMPL-10, NFR-PORT-5): about 5 - 6 minutes of sample
-data loading on the first start (about 8 minutes for a whole clean start), about +140 MB of database
+**Cost relative to the minimal template** (FR-TMPL-10, NFR-PORT-5): about 2 - 5 minutes of sample
+data loading on the first start (typically 3 - 8 minutes for a whole clean start), about +140 MB of database
 size (about 194 MB total), and about +570 MB of volume size on disk (about 700 MB total for `db-data`).
 It contains **only the published Ed-Fi synthetic sample data** -- no real student records of any kind.
 

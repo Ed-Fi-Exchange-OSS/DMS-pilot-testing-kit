@@ -7,17 +7,25 @@
 # interactions `smoke-test.sh`/`.ps1` run non-interactively; this file is for a person to run one
 # request at a time in VS Code with the "REST Client" extension and read the actual responses.
 #
-# Fill in @key and @secret below before running anything past the token request. Two ways:
+# Provide the bootstrap key and secret before running anything past the token request. THIS FILE
+# IS TRACKED BY GIT: don't paste real credentials into it. @key/@secret below resolve to the
+# DMS_BOOTSTRAP_KEY / DMS_BOOTSTRAP_SECRET variables, so supply those one of two ways (copy the
+# "key" and "secret" fields from .runtime/bootstrap-credentials.json, written by `start` or
+# `bootstrap` -- see bootstrap/README.md):
 #
-#   1. File variables (quickest): open .runtime/bootstrap-credentials.json (written by `start` or
-#      `bootstrap` -- see bootstrap/README.md) and paste its "key" and "secret" fields into the two
-#      lines below.
-#   2. A REST Client environment (keeps secrets out of this file): add an environment in
-#      .vscode/settings.json's "rest-client.environmentVariables", for example
-#        { "$shared": { "key": "...", "secret": "..." } }
-#      then pick it from the REST Client status bar and leave @key/@secret blank -- {{key}}/{{secret}}
-#      resolve the same way either way. See
-#      https://github.com/Huachao/vscode-restclient/blob/master/README.md#environment-variables
+#   1. REST Client environment variables (recommended): in your VS Code *user* settings, add
+#        "rest-client.environmentVariables": {
+#          "$shared": { "DMS_BOOTSTRAP_KEY": "...", "DMS_BOOTSTRAP_SECRET": "..." }
+#        }
+#      See https://github.com/Huachao/vscode-restclient/blob/master/README.md#environment-variables
+#   2. A git-ignored http/.env file (the repo's ignore rules cover it) containing
+#        DMS_BOOTSTRAP_KEY=...
+#        DMS_BOOTSTRAP_SECRET=...
+#      then change the two lines below to @key = {{$dotenv DMS_BOOTSTRAP_KEY}} and
+#      @secret = {{$dotenv DMS_BOOTSTRAP_SECRET}} (and don't commit that edit).
+#
+# Fallback: you can still paste the values straight into the @key/@secret lines below. That works,
+# but it puts a secret in a tracked file, so revert it before committing.
 #
 # Every request below authenticates with the bootstrap (ADMIN) credential -- the only one that
 # already exists right after startup (FR-TEST-2). It is broad-access and not representative of a
