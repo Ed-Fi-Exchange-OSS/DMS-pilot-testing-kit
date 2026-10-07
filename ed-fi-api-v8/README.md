@@ -76,11 +76,20 @@ If you want the rationale behind how the kit is built rather than how to use it,
 The kit supports three integration shapes. Pick the row that matches what you're building before
 you start anything else:
 
-| You are building... | Starting command | Template | Claim set |
-| --- | --- | --- | --- |
-| A **SIS** (Student Information System) integration: writing enrollment, demographic, staff, schedule, and calendar data | `./new-credential.sh --shape sis --name <your-name>` | minimal (the default) | `SISVendor` |
-| An **assessment provider** integration: writing assessment metadata and student results that reference existing students and education organizations | `./new-credential.sh --shape assessment --name <your-name>` | populated | `AssessmentVendor` |
-| A **downstream data warehouse or analytics** integration: reading data out through full extracts and change queries | `./new-credential.sh --shape warehouse --name <your-name>` | populated | `DataWarehouse` -- a kit addition, not a standard Ed-Fi claim set; see [below](#the-data-warehouse-claim-set) |
+| You are building... | Starting command | Template | Claim set | Allowed namespace prefixes |
+| --- | --- | --- | --- | --- |
+| A **SIS** (Student Information System) integration: writing enrollment, demographic, staff, schedule, and calendar data | `./new-credential.sh --shape sis --name <your-name>` | minimal (the default) | `SISVendor` | `uri://ed-fi.org` (plus `uri://gbisd.edu` on populated) |
+| An **assessment provider** integration: writing assessment metadata and student results that reference existing students and education organizations | `./new-credential.sh --shape assessment --name <your-name>` | populated | `AssessmentVendor` | `uri://ed-fi.org` and `uri://gbisd.edu` only |
+| A **downstream data warehouse or analytics** integration: reading data out through full extracts and change queries | `./new-credential.sh --shape warehouse --name <your-name>` | populated | `DataWarehouse` -- a kit addition, not a standard Ed-Fi claim set; see [below](#the-data-warehouse-claim-set) | same as above (reads aren't namespace-restricted) |
+
+**Namespace prefixes are fixed.** Namespace-based authorization (for example on assessment
+metadata) checks that the `namespace` of the data you write starts with one of your credential's
+prefixes. The kit sets them and has no option to change them. A write under your own namespace, such
+as `uri://vendor.example.org/Assessment`, returns `403` with `The 'Namespace' value of the data
+does not start with any of the caller's associated namespace prefixes`. Use a namespace that
+starts with an allowed prefix (for example `uri://ed-fi.org/MyVendor`) while testing, and tell the
+pilot team if you need your own. Details: [Namespace
+prefixes](docs/credentials-and-claim-sets.md#namespace-prefixes).
 
 A **claim set** is the named authorization configuration that determines which resources and
 actions a credential may use. `new-credential` picks the right one for you from `--shape`; you
@@ -235,11 +244,57 @@ To diagnose an authorization failure (for example a `403` in the assessment step
 
 ### 6. Make your first authenticated request
 
-Use the `Token URL` and your new credential's key/secret from step 4, or open
-[`http/smoke.http`](http/smoke.http) in VS Code with the
-[REST Client](https://marketplace.visualstudio.com/items?itemName=humao.rest-client) extension and
-paste your credential into its `@key`/`@secret` variables. `http/smoke.http` is the same sequence
-`smoke-test` runs, one request at a time, with the actual responses visible.
+Your credential file (`.runtime/credentials/<name>.json`) holds the `key`, `secret`, `tokenUrl`,
+and `apiBaseUrl` you need. Three things trip people up on the first request:
+
+- **The token endpoint accepts HTTP Basic auth only.** Send the key and secret as the Basic
+  `Authorization` header, with `grant_type=client_credentials` in the form body. Putting
+  `client_id`/`client_secret` in the body instead returns `400 Malformed Authorization header`.
+- **`apiBaseUrl` (for example `https://localhost/api`) is the Discovery root, not the data root.**
+  Data lives under `{apiBaseUrl}/data/ed-fi/...`, so `{apiBaseUrl}/ed-fi/schools` returns `404`.
+  Discovery's `urls.dataManagementApi` also gives you the data root.
+- **Your claim set decides what you can read.** Pick a first request your credential can actually
+  make, from the table below.
+
+| Credential shape | Suggested first request | Why this one |
+| --- | --- | --- |
+| `sis` | `GET {apiBaseUrl}/data/ed-fi/schools` | the request `new-credential` itself uses to verify this shape |
+| `assessment` | `GET {apiBaseUrl}/data/ed-fi/assessments` | the verification request for this shape; on the populated template, `GET {apiBaseUrl}/data/ed-fi/students?limit=1` also works |
+| `warehouse` | `GET {apiBaseUrl}/data/ed-fi/students?limit=1` | the verification request for this shape; `DataWarehouse` is read-only, so any `POST`, `PUT`, or `DELETE` returns `403` |
+
+Worked example, using the values from your credential file in place of the placeholders. The
+certificate flags are there because the certificate is self-signed; see
+[Trusting the certificate](#trusting-the-certificate-from-your-own-client-code).
+
+```shell
+# Bash (needs curl and jq)
+TOKEN=$(curl --cacert ssl/server.crt -s -u "<key>:<secret>" \
+  -d "grant_type=client_credentials" https://localhost/api/oauth/token | jq -r .access_token)
+curl --cacert ssl/server.crt -H "Authorization: Bearer $TOKEN" \
+  "https://localhost/api/data/ed-fi/schools?limit=5"
+```
+
+```powershell
+# PowerShell 7
+$secret = ConvertTo-SecureString "<secret>" -AsPlainText -Force
+$credential = [pscredential]::new("<key>", $secret)
+$token = (Invoke-RestMethod -SkipCertificateCheck -Method Post `
+  -Uri https://localhost/api/oauth/token -Authentication Basic -Credential $credential `
+  -Body @{ grant_type = "client_credentials" }).access_token
+Invoke-RestMethod -SkipCertificateCheck -Uri "https://localhost/api/data/ed-fi/schools?limit=5" `
+  -Authentication Bearer -Token (ConvertTo-SecureString $token -AsPlainText -Force)
+```
+
+A `200` with a JSON array means you're through. A `403` on a path that isn't in the table usually
+means your claim set doesn't cover it; see
+[`docs/credentials-and-claim-sets.md`](docs/credentials-and-claim-sets.md).
+
+[`http/smoke.http`](http/smoke.http) (open it in VS Code with the
+[REST Client](https://marketplace.visualstudio.com/items?itemName=humao.rest-client) extension) is
+the same full sequence `smoke-test` runs, one request at a time, with the actual responses visible.
+**It needs the bootstrap (admin) credential** from `.runtime/bootstrap-credentials.json`, not an
+integration credential from step 4. Parts of it create education organizations and write data that
+a read-only `warehouse` credential or an `assessment` credential isn't permitted to touch.
 
 ## URLs, routes, and default credentials
 
@@ -280,6 +335,9 @@ would never do for a real endpoint:
 
 - **curl:** `curl --cacert ssl/server.crt https://localhost/api`
 - **Python (`requests`):** `requests.get(url, verify="ssl/server.crt")`
+- **PowerShell 7:** `Invoke-RestMethod -SkipCertificateCheck -Uri https://localhost/api` skips
+  verification for that one call (local development only). To trust the certificate instead, use
+  the `certutil` command in the .NET bullet below.
 - **Node.js:** set the environment variable `NODE_EXTRA_CA_CERTS=ssl/server.crt` before your process
   starts.
 - **.NET:** `HttpClient` validates against the OS certificate trust store by default, so trusting
@@ -481,6 +539,13 @@ failures, each with the exact command or message to look for.
   the kit downloads. After that, only your browser reaches out, to load Swagger UI from `unpkg.com`.
 - **Swagger UI needs internet access in your browser.** If your network blocks `unpkg.com`,
   `/swagger/` won't render. The rest of the kit is unaffected.
+- **A `studentAssessment` that references an assessment in a disallowed namespace returns `500`
+  instead of `403`.** The response is `An unexpected problem has occurred.`, and the DMS log
+  (`docker compose logs dms`) shows `Npgsql.PostgresException 42P08: could not determine data type
+  of parameter $1` in `CompositeRelationalWriteSecondCommand.MapAuthorizationFailureAsync`. This is
+  an upstream DMS issue, not something the kit can fix. Workaround: use an allowed namespace
+  prefix for the assessment (see [Namespace
+  prefixes](docs/credentials-and-claim-sets.md#namespace-prefixes)).
 - **Swagger UI leaves `pageSize` empty.** DMS advertises a default `pageSize` of 500, but rejects
   `pageSize` without `pageToken`. So the kit's Swagger UI removes that default. To page with a
   cursor in Swagger UI, fill in both. Upstream issue: DMS-1588.

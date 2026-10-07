@@ -75,6 +75,29 @@ schools), scoping a SIS or assessment credential to just the SEA or just the LEA
 .\new-credential.ps1 -Shape warehouse -Name acme-warehouse
 ```
 
+### Namespace prefixes
+
+`new-credential` registers each credential's CMS vendor with a fixed set of namespace prefixes,
+chosen by the template actually loaded, not by `--shape`:
+
+| Template actually loaded | Namespace prefixes |
+| --- | --- |
+| minimal | `uri://ed-fi.org` |
+| populated | `uri://ed-fi.org`, `uri://gbisd.edu` |
+
+An `assessment` credential is meant for the populated template, so in practice it gets
+`uri://ed-fi.org` and `uri://gbisd.edu` only. There is no option to add others.
+
+Assessment metadata is authorized by namespace: the `namespace` of an assessment you write must
+start with one of those prefixes. A write under your own namespace, for example
+`uri://vendor.example.org/Assessment`, returns `403` with `The 'Namespace' value of the data does
+not start with any of the caller's associated namespace prefixes`. Use a namespace that starts with
+an allowed prefix instead, such as `uri://ed-fi.org/MyVendor` or `uri://gbisd.edu/MyVendor`.
+
+The same applies to a `studentAssessment` that references an assessment. If the referenced
+assessment is in a disallowed namespace, DMS currently returns `500` rather than `403`; see
+[Known limitations](../README.md#known-limitations).
+
 ## Claim sets the kit uses
 
 | Claim set | Standard or kit addition | Used by | Grants |
