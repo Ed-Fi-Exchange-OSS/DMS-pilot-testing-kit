@@ -440,7 +440,9 @@ printf 'Credential "%s" created (shape=%s, claimSet=%s)\n' "$NAME" "$SHAPE" "$CL
 printf 'Key:       %s\n' "$CMS_APPLICATION_KEY"
 printf 'Secret:    %s\n' "$CMS_APPLICATION_SECRET"
 printf 'Token URL: %s\n' "$TOKEN_URL"
-printf 'Saved to:  ed-fi-api-v8/.runtime/credentials/%s.json\n' "$NAME"
+# KIT_HOST_DIR is the kit folder's host path, passed in by the new-credential host wrapper (this runs
+# in a container and can't know it). Without it, fall back to a path relative to the kit folder.
+printf 'Saved to:  %s.runtime/credentials/%s.json\n' "${KIT_HOST_DIR:+${KIT_HOST_DIR%/}/}" "$NAME"
 printf 'WARNING: this secret cannot be recovered later -- store it now.\n'
 if [ "$VERIFY_OK" != true ]; then
     printf 'WARNING: the first authorized request could not be verified; see the log output above.\n'

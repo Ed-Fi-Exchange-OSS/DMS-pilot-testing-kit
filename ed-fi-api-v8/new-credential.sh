@@ -138,4 +138,9 @@ if [ -n "$EDORG_IDS" ]; then
     args+=(--edorg-ids "$EDORG_IDS")
 fi
 
-exec docker compose run --rm --no-deps --user 0:0 tools sh /init/new-credential.sh "${args[@]}"
+# Pass the kit folder's host path so the container can print an absolute "Saved to:" path (`pwd -W`
+# gives the Windows form under Git Bash; plain `pwd` elsewhere).
+KIT_HOST_DIR="$(pwd -W 2>/dev/null || pwd)"
+
+exec docker compose run --rm --no-deps --user 0:0 -e "KIT_HOST_DIR=$KIT_HOST_DIR" \
+    tools sh /init/new-credential.sh "${args[@]}"

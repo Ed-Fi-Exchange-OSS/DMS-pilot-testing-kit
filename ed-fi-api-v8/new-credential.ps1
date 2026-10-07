@@ -110,7 +110,8 @@ try {
         $containerArgs += @('--edorg-ids', $EdOrgIds)
     }
 
-    docker compose run --rm --no-deps --user 0:0 tools sh /init/new-credential.sh @containerArgs
+    # Pass the kit folder's host path so the container can print an absolute "Saved to:" path.
+    docker compose run --rm --no-deps --user 0:0 -e "KIT_HOST_DIR=$ScriptDir" tools sh /init/new-credential.sh @containerArgs
     exit $LASTEXITCODE
 }
 finally {
