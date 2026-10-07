@@ -14,9 +14,8 @@ POST https://localhost/api/management/reload-claimsets
 Authorization: Bearer this-is-not-a-valid-token
 
 #
-# when using VS Code's restclient plugin, see following for instructions on configuring
-# an environment variable for the CMS_ADMIN_CLIENT_SECRET
-# https://github.com/Huachao/vscode-restclient/blob/master/README.md#environment-variables
+# Reads CMS_ADMIN_CLIENT_SECRET from the git-ignored http/.env (copy http/.env.example); the value
+# is the CMS_ADMIN_CLIENT_SECRET line in the kit's own .env.
 
 
 ### Authenticate
@@ -24,7 +23,7 @@ Authorization: Bearer this-is-not-a-valid-token
 POST https://localhost/config/connect/token
 Content-Type: application/x-www-form-urlencoded
 
-grant_type=client_credentials&client_id=PilotKitAdmin&client_secret={{CMS_ADMIN_CLIENT_SECRET}}&scope=edfi_admin_api/full_access
+grant_type=client_credentials&client_id=PilotKitAdmin&client_secret={{$dotenv CMS_ADMIN_CLIENT_SECRET}}&scope=edfi_admin_api/full_access
 
 ### Reload claimsets - expect 200
 POST https://localhost/api/management/reload-claimsets

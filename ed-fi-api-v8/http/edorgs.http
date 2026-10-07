@@ -11,9 +11,7 @@
 # identifiers, grade levels, and school categories below; this file and that one must never diverge
 # (FR-EDORG-14) -- see bootstrap/README.md.
 #
-# Fill in @key and @secret before running anything past the token request, from
-# .runtime/bootstrap-credentials.json or a REST Client environment -- see http/smoke.http's header
-# for both options. This file is intended for the bootstrap (ADMIN) credential specifically
+# @key and @secret come from the git-ignored http/.env -- see http/smoke.http's header. This file is intended for the bootstrap (ADMIN) credential specifically
 # (FR-EDORG-11): only it is broad enough to create education organizations. Running these requests
 # with a scoped participant integration credential instead is the most likely failure (FR-EDORG-13)
 # and returns 403, for example:
@@ -25,8 +23,8 @@
 # (FR-EDORG-6).
 
 @baseUrl = https://localhost/api
-@key = {{DMS_BOOTSTRAP_KEY}}
-@secret = {{DMS_BOOTSTRAP_SECRET}}
+@key = {{$dotenv DMS_BOOTSTRAP_KEY}}
+@secret = {{$dotenv DMS_BOOTSTRAP_SECRET}}
 
 # Baseline identifiers (bootstrap/baseline-edorgs.json, FR-EDORG-7). Chosen not to collide with the
 # populated template's sample organizations -- LEA 255901, ESC 255950, post-secondary institution

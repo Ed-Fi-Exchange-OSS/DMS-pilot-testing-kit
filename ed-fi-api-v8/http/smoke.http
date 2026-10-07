@@ -8,24 +8,11 @@
 # request at a time in VS Code with the "REST Client" extension and read the actual responses.
 #
 # Provide the bootstrap key and secret before running anything past the token request. THIS FILE
-# IS TRACKED BY GIT: don't paste real credentials into it. @key/@secret below resolve to the
-# DMS_BOOTSTRAP_KEY / DMS_BOOTSTRAP_SECRET variables, so supply those one of two ways (copy the
-# "key" and "secret" fields from .runtime/bootstrap-credentials.json, written by `start` or
-# `bootstrap` -- see bootstrap/README.md):
-#
-#   1. REST Client environment variables (recommended): in your VS Code *user* settings, add
-#        "rest-client.environmentVariables": {
-#          "$shared": { "DMS_BOOTSTRAP_KEY": "...", "DMS_BOOTSTRAP_SECRET": "..." }
-#        }
-#      See https://github.com/Huachao/vscode-restclient/blob/master/README.md#environment-variables
-#   2. A git-ignored http/.env file (the repo's ignore rules cover it) containing
-#        DMS_BOOTSTRAP_KEY=...
-#        DMS_BOOTSTRAP_SECRET=...
-#      then change the two lines below to @key = {{$dotenv DMS_BOOTSTRAP_KEY}} and
-#      @secret = {{$dotenv DMS_BOOTSTRAP_SECRET}} (and don't commit that edit).
-#
-# Fallback: you can still paste the values straight into the @key/@secret lines below. That works,
-# but it puts a secret in a tracked file, so revert it before committing.
+# IS TRACKED BY GIT, so don't paste real credentials into it. Instead, copy http/.env.example to
+# http/.env (git-ignored) and fill in DMS_BOOTSTRAP_KEY / DMS_BOOTSTRAP_SECRET from the "key" and
+# "secret" fields of .runtime/bootstrap-credentials.json, written by `start` or `bootstrap` -- see
+# bootstrap/README.md. REST Client reads http/.env only through {{$dotenv NAME}}, which is what
+# @key/@secret below use; a plain {{NAME}} would look in VS Code settings instead.
 #
 # Every request below authenticates with the bootstrap (ADMIN) credential -- the only one that
 # already exists right after startup (FR-TEST-2). It is broad-access and not representative of a
@@ -37,8 +24,8 @@
 # source of truth in bootstrap/baseline-edorgs.json (FR-EDORG-14) -- see http/edorgs.http.
 
 @baseUrl = https://localhost/api
-@key = {{DMS_BOOTSTRAP_KEY}}
-@secret = {{DMS_BOOTSTRAP_SECRET}}
+@key = {{$dotenv DMS_BOOTSTRAP_KEY}}
+@secret = {{$dotenv DMS_BOOTSTRAP_SECRET}}
 
 @seaId = 99
 @leaId = 9900

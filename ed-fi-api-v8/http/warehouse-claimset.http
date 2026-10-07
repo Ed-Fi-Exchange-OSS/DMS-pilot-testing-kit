@@ -4,13 +4,12 @@
 # See the LICENSE and NOTICES files in the project root for more information.
 
 # Creates and tests client credentials using the warehouse claimset.
-# The `CMS_ADMIN_CLIENT_SECRET` needs to be setup as an environment variable; the value
-# is stored in your `.env` file, but needs to be copied to the environment variables
-# used for your .http file client.
+# Reads CMS_ADMIN_CLIENT_SECRET from the git-ignored http/.env (copy http/.env.example); the value
+# is the CMS_ADMIN_CLIENT_SECRET line in the kit's own .env.
 
 @baseUrlApi = https://localhost/api
 @baseUrlConfig = https://localhost/config
-@cmsAdminSecret = {{CMS_ADMIN_CLIENT_SECRET}}
+@cmsAdminSecret = {{$dotenv CMS_ADMIN_CLIENT_SECRET}}
 
 ### Authenticate with bootstrap credentials
 # @name cmsToken

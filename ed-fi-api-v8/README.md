@@ -295,7 +295,9 @@ means your claim set doesn't cover it; see
 the same full sequence `smoke-test` runs, one request at a time, with the actual responses visible.
 **It needs the bootstrap (admin) credential** from `.runtime/bootstrap-credentials.json`, not an
 integration credential from step 4. Parts of it create education organizations and write data that
-a read-only `warehouse` credential or an `assessment` credential isn't permitted to touch.
+a read-only `warehouse` credential or an `assessment` credential isn't permitted to touch. The
+`.http` files read their secrets from a git-ignored `http/.env`: copy
+[`http/.env.example`](http/.env.example) to `http/.env` and fill it in.
 
 ## URLs, routes, and default credentials
 
