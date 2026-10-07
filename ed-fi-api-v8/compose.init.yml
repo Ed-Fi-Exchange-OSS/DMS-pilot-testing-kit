@@ -1,0 +1,235 @@
+# SPDX-License-Identifier: Apache-2.0
+# Licensed to the Ed-Fi Alliance under one or more agreements.
+# The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
+# See the LICENSE and NOTICES files in the project root for more information.
+
+# The locally built tools image, the one-shot initialization services that use it, and the `tools`
+# service that runs participant scripts on demand.
+#
+# Every service that uses the tools image merges x-tools-image, which carries both image: and build:.
+# `tools` is profile-gated, and a plain `up` doesn't build profile-gated services, so without the
+# shared build: section init-identity would try to pull edfi-pilot-tools:local, which isn't published.
+
+x-tools-image: &tools-image
+  image: edfi-pilot-tools:local
+  build:
+    context: ./tools
+    args:
+      DOTNET_SDK_IMAGE: ${DOTNET_SDK_IMAGE:?DOTNET_SDK_IMAGE must be set in .env}
+      DOTNET_RUNTIME_IMAGE: ${DOTNET_RUNTIME_IMAGE:?DOTNET_RUNTIME_IMAGE must be set in .env}
+      SCHEMATOOLS_VERSION: ${SCHEMATOOLS_VERSION:?SCHEMATOOLS_VERSION must be set in .env}
+      SCHEMATOOLS_SHA256: ${SCHEMATOOLS_SHA256:?SCHEMATOOLS_SHA256 must be set in .env}
+      BULKLOADCLIENT_VERSION: ${BULKLOADCLIENT_VERSION:?BULKLOADCLIENT_VERSION must be set in .env}
+      BULKLOADCLIENT_SHA256: ${BULKLOADCLIENT_SHA256:?BULKLOADCLIENT_SHA256 must be set in .env}
+
+# YAML anchors don't cross include: files, so each file defines its own copy.
+x-logging: &logging
+  driver: json-file
+  options:
+    max-size: "${DOCKER_LOG_MAX_SIZE:-50m}"
+    max-file: "${DOCKER_LOG_MAX_FILE:-5}"
+
+services:
+  # Runs the participant scripts (new-credential, smoke-test) and ad hoc tools against a running
+  # stack, for example `docker compose run --rm --no-deps tools sh /init/smoke-test.sh`. Wrappers pass
+  # --no-deps so a stopped stack fails with "run start first" instead of being started, and
+  # --user 0:0 when writing to .runtime/ (see init/bootstrap.sh for the ownership handling).
+  tools:
+    <<: *tools-image
+    profiles: ["tools"]
+    environment:
+      CMS_ADMIN_CLIENT_SECRET: ${CMS_ADMIN_CLIENT_SECRET:?CMS_ADMIN_CLIENT_SECRET must be set in .env}
+      CONFIG_BASE_URL: http://config:8081
+      DMS_BASE_URL: http://dms:8080/${DMS_PATH_BASE:-api}
+      DMS_HEALTH_URL: http://dms:8080/health
+      # The same routes participants use, through NGINX on the Compose network. The certificate's SANs
+      # include "nginx", so clients verify it with /ssl/server.crt instead of skipping TLS checks.
+      INGRESS_BASE_URL: https://nginx
+      INGRESS_CA_FILE: /ssl/server.crt
+      PUBLIC_ORIGIN: ${PUBLIC_ORIGIN:-https://localhost}
+      DMS_PATH_BASE: ${DMS_PATH_BASE:-api}
+      CMS_PATH_BASE: ${CMS_PATH_BASE:-config}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD must be set in .env}
+      POSTGRES_DB_NAME: ${POSTGRES_DB_NAME:-edfi_datamanagementservice}
+      DATABASE_TEMPLATE: ${DATABASE_TEMPLATE:-minimal}
+      POPULATED_SEED_EDORG_IDS: ${POPULATED_SEED_EDORG_IDS:-255901,255950,6000203,19255901}
+      DATA_V3_REWRITE_ENABLED: ${DATA_V3_REWRITE_ENABLED:-true}
+      BOOTSTRAP_DIR: /bootstrap
+      RUNTIME_DIR: /runtime
+    volumes:
+      - api-schema:/app/ApiSchema
+      - ./init:/init:ro
+      - ./bootstrap:/bootstrap:ro
+      - ./.runtime:/runtime
+      - ./ssl:/ssl:ro
+      - ./http:/http:ro
+
+  # Seeds the OpenIddict signing key and the CMS system clients, then requests a token to prove them.
+  # CMS creates its own tables, so this runs after CMS is healthy. See init/identity.sh.
+  init-identity:
+    <<: *tools-image
+    command: ["sh", "/init/identity.sh"]
+    environment:
+      POSTGRES_DB_NAME: ${POSTGRES_DB_NAME:-edfi_datamanagementservice}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD must be set in .env}
+      CMS_SERVICE_CLIENT_SECRET: ${CMS_SERVICE_CLIENT_SECRET:?CMS_SERVICE_CLIENT_SECRET must be set in .env}
+      CMS_READONLY_CLIENT_SECRET: ${CMS_READONLY_CLIENT_SECRET:?CMS_READONLY_CLIENT_SECRET must be set in .env}
+      CMS_ADMIN_CLIENT_SECRET: ${CMS_ADMIN_CLIENT_SECRET:?CMS_ADMIN_CLIENT_SECRET must be set in .env}
+      CMS_IDENTITY_ENCRYPTION_KEY: ${CMS_IDENTITY_ENCRYPTION_KEY:?CMS_IDENTITY_ENCRYPTION_KEY must be set in .env}
+      # Must equal IdentitySettings__HashingIterations in compose.core.yml.
+      HASH_ITERATIONS: "210000"
+      # Must equal AppSettings__ManagementEndpoints__RequiredRole in compose.core.yml (Task 18).
+      DMS_CLAIMSET_RELOAD_ROLE: ${DMS_CLAIMSET_RELOAD_ROLE:-dms-management-operator}
+      # Direct, without the NGINX path base; the spike confirmed /connect/token answers here.
+      CONFIG_BASE_URL: http://config:8081
+    volumes:
+      - ./init:/init:ro
+    depends_on:
+      config:
+        condition: service_healthy
+    restart: "no"
+    logging: *logging
+
+  # Copies the core DS 5.2 ApiSchema files from the DMS image into the api-schema volume. Root,
+  # because a fresh volume is root-owned; mounted at /stage so Docker's copy-up of the image's
+  # core + TPDM /app/ApiSchema never happens. See init/api-schema.sh.
+  init-api-schema:
+    image: ${DMS_IMAGE:?DMS_IMAGE must be set in .env}
+    entrypoint: ["sh", "/init/api-schema.sh"]
+    user: "0:0"
+    environment:
+      API_SCHEMA_SHA256: ${API_SCHEMA_SHA256:?API_SCHEMA_SHA256 must be set in .env}
+    volumes:
+      - ./init:/init:ro
+      - api-schema:/stage
+    restart: "no"
+    logging: *logging
+
+  # Registers the "Pilot Kit" data store in CMS; DMS won't start without one. See init/datastore.sh.
+  init-datastore:
+    <<: *tools-image
+    command: ["sh", "/init/datastore.sh"]
+    environment:
+      CMS_ADMIN_CLIENT_SECRET: ${CMS_ADMIN_CLIENT_SECRET:?CMS_ADMIN_CLIENT_SECRET must be set in .env}
+      # Direct, without the NGINX path base; the spike confirmed /connect/token answers here.
+      CONFIG_BASE_URL: http://config:8081
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD must be set in .env}
+      POSTGRES_DB_NAME: ${POSTGRES_DB_NAME:-edfi_datamanagementservice}
+      DMS_DB_MAX_POOL_SIZE: ${DMS_DB_MAX_POOL_SIZE:-50}
+    volumes:
+      - ./init:/init:ro
+    depends_on:
+      init-identity:
+        condition: service_completed_successfully
+    restart: "no"
+    logging: *logging
+
+  # Provisions the DS 5.2 relational schema. Waits for CMS so the two never run DDL at the same
+  # time, as in the spike. See init/provision-schema.sh.
+  init-schema:
+    <<: *tools-image
+    command: ["sh", "/init/provision-schema.sh"]
+    environment:
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD must be set in .env}
+      POSTGRES_DB_NAME: ${POSTGRES_DB_NAME:-edfi_datamanagementservice}
+    volumes:
+      - ./init:/init:ro
+      - api-schema:/app/ApiSchema:ro
+    depends_on:
+      db:
+        condition: service_healthy
+      config:
+        condition: service_healthy
+      init-api-schema:
+        condition: service_completed_successfully
+    restart: "no"
+    logging: *logging
+
+  # Imports the kit's claim sets (today, just DataWarehouse) before DMS starts, so DMS never sees a
+  # claim set that isn't already in its cache. See init/claimsets.sh and bootstrap/claimsets/README.md.
+  init-claimsets:
+    <<: *tools-image
+    command: ["sh", "/init/claimsets.sh"]
+    environment:
+      CMS_ADMIN_CLIENT_SECRET: ${CMS_ADMIN_CLIENT_SECRET:?CMS_ADMIN_CLIENT_SECRET must be set in .env}
+      # Direct, without the NGINX path base; the spike confirmed /connect/token answers here.
+      CONFIG_BASE_URL: http://config:8081
+      CLAIMSETS_DIR: /claimsets
+      # FR-CLAIM-14: after re-importing a changed claim set, call DMS's reload endpoint so
+      # it is usable immediately on a stack where DMS is already running. Direct URLs, without the
+      # NGINX path base; DMS_BASE_URL matches DMS_PATH_BASE so the two never drift apart.
+      DMS_CLAIMSET_RELOAD_ENABLED: ${DMS_CLAIMSET_RELOAD_ENABLED:-true}
+      DMS_BASE_URL: http://dms:8080/${DMS_PATH_BASE:-api}
+      DMS_HEALTH_URL: http://dms:8080/health
+    volumes:
+      - ./init:/init:ro
+      - ./bootstrap/claimsets:/claimsets:ro
+    depends_on:
+      init-identity:
+        condition: service_completed_successfully
+    restart: "no"
+    logging: *logging
+
+  # Loads the pinned Data Standard 5.2 "minimal" template (descriptors and SchoolYearType) through a
+  # throwaway SeedLoader credential. Runs after DMS itself, since it loads through the DMS REST API
+  # and BulkLoadClient. See init/template.sh.
+  init-template:
+    <<: *tools-image
+    command: ["sh", "/init/template.sh"]
+    environment:
+      DATABASE_TEMPLATE: ${DATABASE_TEMPLATE:-minimal}
+      # Direct, without the NGINX path base; matches DMS_PATH_BASE so the two never drift apart.
+      DMS_BASE_URL: http://dms:8080/${DMS_PATH_BASE:-api}
+      CONFIG_BASE_URL: http://config:8081
+      CMS_ADMIN_CLIENT_SECRET: ${CMS_ADMIN_CLIENT_SECRET:?CMS_ADMIN_CLIENT_SECRET must be set in .env}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD must be set in .env}
+      POSTGRES_DB_NAME: ${POSTGRES_DB_NAME:-edfi_datamanagementservice}
+      DATA_STANDARD_URL: ${DATA_STANDARD_URL:?DATA_STANDARD_URL must be set in .env}
+      DATA_STANDARD_VERSION: ${DATA_STANDARD_VERSION:?DATA_STANDARD_VERSION must be set in .env}
+      DATA_STANDARD_CONTENT_SHA256: ${DATA_STANDARD_CONTENT_SHA256:?DATA_STANDARD_CONTENT_SHA256 must be set in .env}
+      DATA_STANDARD_SAMPLES_SHA256: ${DATA_STANDARD_SAMPLES_SHA256:?DATA_STANDARD_SAMPLES_SHA256 must be set in .env}
+      POPULATED_SEED_EDORG_IDS: ${POPULATED_SEED_EDORG_IDS:?POPULATED_SEED_EDORG_IDS must be set in .env}
+    volumes:
+      - ./init:/init:ro
+      - data-standard-cache:/cache
+    depends_on:
+      dms:
+        condition: service_healthy
+      init-identity:
+        condition: service_completed_successfully
+      init-datastore:
+        condition: service_completed_successfully
+    restart: "no"
+    logging: *logging
+
+  # Creates the bootstrap credential (written to .runtime/bootstrap-credentials.json) and any missing
+  # baseline education organizations. Rerun with `docker compose run --rm init-bootstrap`. Runs as
+  # root to write the bind mount, then gives the file to the owner of .runtime/ (tracked in git, so
+  # it's the host user). See init/bootstrap.sh.
+  init-bootstrap:
+    <<: *tools-image
+    command: ["sh", "/init/bootstrap.sh"]
+    user: "0:0"
+    environment:
+      CMS_ADMIN_CLIENT_SECRET: ${CMS_ADMIN_CLIENT_SECRET:?CMS_ADMIN_CLIENT_SECRET must be set in .env}
+      # Direct, without the NGINX path base; the spike confirmed /connect/token answers here.
+      CONFIG_BASE_URL: http://config:8081
+      # Direct, without the NGINX path base; matches DMS_PATH_BASE so the two never drift apart.
+      DMS_BASE_URL: http://dms:8080/${DMS_PATH_BASE:-api}
+      # Public-facing values baked into bootstrap-credentials.json, so the file is usable outside the
+      # Compose network exactly as written.
+      PUBLIC_ORIGIN: ${PUBLIC_ORIGIN:-https://localhost}
+      DMS_PATH_BASE: ${DMS_PATH_BASE:-api}
+      BOOTSTRAP_DIR: /bootstrap
+      RUNTIME_DIR: /runtime
+    volumes:
+      - ./init:/init:ro
+      - ./bootstrap:/bootstrap:ro
+      - ./.runtime:/runtime
+    depends_on:
+      dms:
+        condition: service_healthy
+      init-template:
+        condition: service_completed_successfully
+    restart: "no"
+    logging: *logging

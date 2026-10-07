@@ -1,0 +1,34 @@
+# SPDX-License-Identifier: Apache-2.0
+# Licensed to the Ed-Fi Alliance under one or more agreements.
+# The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
+# See the LICENSE and NOTICES files in the project root for more information.
+
+# NOTE: this file assumes that DMS_CLAIMSET_RELOAD_ENABLED=TRUE
+
+### Reload claimset - not authenticated - expect 401
+### unless reload is disabled, in which case 404
+POST https://localhost/api/management/reload-claimsets
+
+### Reload claimset - fake token - expect 401
+POST https://localhost/api/management/reload-claimsets
+Authorization: Bearer this-is-not-a-valid-token
+
+#
+# Reads CMS_ADMIN_CLIENT_SECRET from the git-ignored http/.env (copy http/.env.example); the value
+# is the CMS_ADMIN_CLIENT_SECRET line in the kit's own .env.
+
+
+### Authenticate
+# @name token
+POST https://localhost/config/connect/token
+Content-Type: application/x-www-form-urlencoded
+
+grant_type=client_credentials&client_id=PilotKitAdmin&client_secret={{$dotenv CMS_ADMIN_CLIENT_SECRET}}&scope=edfi_admin_api/full_access
+
+### Reload claimsets - expect 200
+POST https://localhost/api/management/reload-claimsets
+Authorization: Bearer {{token.response.body.access_token}}
+
+### Get all claimsets
+GET https://localhost/api/management/view-claimsets
+Authorization: Bearer {{token.response.body.access_token}}

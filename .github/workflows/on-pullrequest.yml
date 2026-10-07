@@ -15,4 +15,6 @@ permissions: read-all
 jobs:
   scan-actions-bidi:
     name: Scan Actions, scan all files for BIDI Trojan Attacks
+    # Deliberately pinned to @main rather than a SHA to always use the latest version of this
+    # reusable workflow that we maintain
     uses: ed-fi-alliance-oss/ed-fi-actions/.github/workflows/repository-scanner.yml@main

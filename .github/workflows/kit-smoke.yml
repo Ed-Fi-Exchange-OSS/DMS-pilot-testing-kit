@@ -1,0 +1,185 @@
+# SPDX-License-Identifier: Apache-2.0
+# Licensed to the Ed-Fi Alliance under one or more agreements.
+# The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
+# See the LICENSE and NOTICES files in the project root for more information.
+
+name: Ed-Fi API v8 kit smoke test
+
+on:
+  pull_request:
+    branches:
+      - main
+    paths:
+      - 'ed-fi-api-v8/**'
+      - '.github/workflows/kit-smoke.yml'
+  schedule:
+    # 06:17 UTC daily
+    - cron: '17 6 * * *'
+  workflow_dispatch:
+
+permissions: read-all
+
+jobs:
+  shellcheck:
+    name: shellcheck
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: shellcheck - host scripts
+        working-directory: ed-fi-api-v8
+        run: >
+          shellcheck -x
+          start.sh stop.sh reset.sh bootstrap.sh new-credential.sh smoke-test.sh
+          scripts/lib.sh ssl/generate-certificate.sh
+
+      - name: shellcheck - container init scripts
+        working-directory: ed-fi-api-v8/init
+        run: shellcheck --shell=sh -x -- *.sh
+
+      - name: shellcheck - tools and nginx entrypoint scripts
+        working-directory: ed-fi-api-v8
+        run: shellcheck tools/bulkloadclient.sh nginx/entrypoint.d/40-kit-features.sh
+
+  psscriptanalyzer:
+    name: PSScriptAnalyzer
+    runs-on: ubuntu-latest
+    # Deliberately NOT calling the reusable *workflow*
+    # (ed-fi-alliance-oss/ed-fi-actions/.github/workflows/powershell-analyzer.yml@main) here. That
+    # workflow checks out the repo under review into a testing-repo/ subdirectory, then calls
+    # github/codeql-action/upload-sarif with no checkout_path override, so upload-sarif looks for a
+    # git repo at $GITHUB_WORKSPACE itself (which has none -- only the checked-out subdirectories
+    # do) and falls back to the raw GITHUB_SHA/GITHUB_REF env vars. For a pull_request event those
+    # point at the ephemeral refs/pull/<N>/merge ref, not refs/pull/<N>/head -- confirmed on this
+    # repo's own PR #5: the alerts really were uploaded (22 results, queryable at
+    # `GET /code-scanning/alerts?ref=refs/pull/5/merge`), but neither the PR's checks view nor the
+    # repo's Security tab ever show them, since both query refs/pull/5/head and the default branch
+    # respectively. That's a bug in the upstream workflow, not something this job's inputs can work
+    # around.
+    #
+    # So this job calls the underlying `powershell-analyzer` Docker *action* directly instead --
+    # same analysis, same checkout shape -- and stops after producing results.sarif rather than
+    # feeding it to a SARIF upload step that can't currently land anywhere a human would see it.
+    # Revisit once the upstream workflow fixes its checkout_path/ref handling.
+    steps:
+      - name: Checkout the Actions repo
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          repository: Ed-Fi-Alliance-OSS/Ed-Fi-Actions
+          path: Ed-Fi-Actions
+
+      - name: Checkout the repo to review
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          path: testing-repo
+
+      - name: Analyze
+        uses: ./Ed-Fi-Actions/powershell-analyzer
+        with:
+          directory: ./testing-repo/
+
+      - name: Upload SARIF as artifact
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: psscriptanalyzer-sarif
+          path: ./results.sarif
+          retention-days: 10
+
+  kit-smoke-minimal:
+    name: Kit smoke test (minimal template)
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    # Budget: the README/spike-notes measure a clean minimal `up` in roughly a minute of load time,
+    # but a CI runner also pays for every image pull and the tools image's from-scratch build
+    # (dotnet/sdk-based) on every run, with no layer cache carried over between runs. 20 minutes
+    # leaves generous headroom over that for a job that should normally finish in a few minutes.
+    timeout-minutes: 20
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Generate the TLS certificate
+        run: ./ed-fi-api-v8/ssl/generate-certificate.sh
+
+      - name: Show Docker and Compose versions
+        run: |
+          docker version
+          docker compose version
+
+      - name: Start the kit (minimal template)
+        run: ./ed-fi-api-v8/start.sh --template minimal
+
+      - name: Run the smoke test
+        run: ./ed-fi-api-v8/smoke-test.sh
+
+      # From here on, run regardless of whether the steps above succeeded, so a failure is
+      # debuggable from the Actions UI without re-running anything.
+      - name: Collect docker compose logs
+        if: always()
+        working-directory: ed-fi-api-v8
+        run: docker compose logs --no-color --timestamps > compose-logs.txt 2>&1 || true
+
+      - name: Upload logs
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: kit-smoke-logs-minimal
+          path: |
+            ed-fi-api-v8/logs/
+            ed-fi-api-v8/compose-logs.txt
+          if-no-files-found: warn
+          retention-days: 14
+
+      - name: Tear down the stack
+        if: always()
+        run: ./ed-fi-api-v8/reset.sh --force
+
+  kit-smoke-populated:
+    name: Kit smoke test (populated template)
+    # This is an expensive job - do not run it on every pull request
+    if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    # Budget: the README/spike-notes measure a clean populated `up` at about 200s (around 3.3
+    # minutes) of load time on a spike host, and about 8 minutes for the whole clean stack
+    # end-to-end there. A CI runner also pays for image pulls and the tools image build on every
+    # run (see the minimal job's comment), so 30 minutes leaves generous headroom over the
+    # measured figures instead of guessing a number.
+    timeout-minutes: 30
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Generate the TLS certificate
+        run: ./ed-fi-api-v8/ssl/generate-certificate.sh
+
+      - name: Show Docker and Compose versions
+        run: |
+          docker version
+          docker compose version
+
+      - name: Start the kit (populated template)
+        run: ./ed-fi-api-v8/start.sh --template populated
+
+      - name: Run the smoke test
+        run: ./ed-fi-api-v8/smoke-test.sh
+
+      - name: Collect docker compose logs
+        if: always()
+        working-directory: ed-fi-api-v8
+        run: docker compose logs --no-color --timestamps > compose-logs.txt 2>&1 || true
+
+      - name: Upload logs
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: kit-smoke-logs-populated
+          path: |
+            ed-fi-api-v8/logs/
+            ed-fi-api-v8/compose-logs.txt
+          if-no-files-found: warn
+          retention-days: 14
+
+      - name: Tear down the stack
+        if: always()
+        run: ./ed-fi-api-v8/reset.sh --force
