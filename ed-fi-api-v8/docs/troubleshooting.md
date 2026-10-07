@@ -11,6 +11,12 @@ host, Compose will fail to bring up `nginx` or `db`. Change the conflicting valu
 starting -- or before re-running `start` if you already have a `.env` -- and start again. No other
 host port is published by this kit.
 
+Changing `HTTPS_PORT` also requires changing `PUBLIC_ORIGIN`, because the printed URLs, the saved
+credential files (token URL and `apiBaseUrl`), and the CORS origins are all built from
+`PUBLIC_ORIGIN`. For example, with `HTTPS_PORT=8443` set `PUBLIC_ORIGIN=https://localhost:8443`; with
+the default `443`, leave the port off (or write `:443`). `start` stops with an error that names the
+exact value to set if the two disagree.
+
 ## Certificate trust failures
 
 - **A client rejects the certificate as untrusted:** see [Trusting the certificate from your own

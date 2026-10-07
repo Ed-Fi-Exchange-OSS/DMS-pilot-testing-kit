@@ -38,6 +38,9 @@ Public API (everything else here is a private helper, prefixed with an underscor
                                           doesn't exist; otherwise warn (by name) about any variable
                                           in .env.example that .env is missing. Never modifies an
                                           existing .env value, and never prints a secret value.
+                                          Refuses (error) to generate new secrets if .env is missing
+                                          but this kit's Docker volumes still exist.
+    Assert-KitPublicOrigin               error unless PUBLIC_ORIGIN's port matches HTTPS_PORT
     Initialize-KitCertificates           generate ssl/server.{crt,key} if either is missing
     Initialize-KitDirectories            create .runtime/ and ${LOG_DIR:-./logs}/nginx
     Get-KitComposeFailures [-UpOutput L] one object (Service, Reason) per failing service: those
@@ -253,14 +256,16 @@ $script:KitDigit = '0123456789'
 # line, where the VS Code REST Client extension substitutes the placeholder as literal text without
 # urlencoding it. A literal '&' in the secret would be read as a field separator, and a literal '='
 # would make everything after it in that chunk part of the wrong field, corrupting the request.
-$script:KitSpecialFull = '!@#%^*()-_+[]{}:;,.?'
+# No '+' or '%' for the same reason: form decoding turns a literal '+' into a space and reads '%XX'
+# as a percent-escape, so either one would silently change the secret the server compares against.
+$script:KitSpecialFull = '!@#^*()-_[]{}:;,.?'
 # Same set without ';'. POSTGRES_PASSWORD is embedded, unescaped, into semicolon-delimited
 # ADO.NET/Npgsql-style connection strings elsewhere in the kit (compose.core.yml
 # DatabaseSettings__DatabaseConnection and DATABASE_CONNECTION_STRING_ADMIN, and the connection
 # string init/datastore.sh registers with CMS); a literal ';' in the password would truncate or
 # corrupt those. PGADMIN_DEFAULT_PASSWORD and CMS_DATABASE_ENCRYPTION_KEY use the same safe pool
 # out of caution, even though neither is known to need it today.
-$script:KitSpecialSafe = '!@#%^*()-_+[]{}:,.?'
+$script:KitSpecialSafe = '!@#^*()-_[]{}:,.?'
 
 function Get-KitRandomChars {
     param([Parameter(Mandatory)][string] $Pool, [Parameter(Mandatory)][int] $Count)
@@ -352,6 +357,17 @@ function New-KitBase64Key {
 # start.ps1 building blocks (reusable by any future wrapper)
 # ------------------------------------------------------------------------------------------------
 
+# Get-KitExistingVolumes -- names of this kit's Docker volumes, found by the Compose project label
+# (the same set `docker compose down -v`, which reset.ps1 runs, would delete). The project name is
+# KIT_PROJECT_NAME from the environment, else compose.yml's default; with .env missing there is
+# nowhere else to read it from.
+function Get-KitExistingVolumes {
+    $project = if ($env:KIT_PROJECT_NAME) { $env:KIT_PROJECT_NAME } else { 'edfi-pilot' }
+    $names = & docker volume ls -q --filter "label=com.docker.compose.project=$project" 2>$null
+    if ($LASTEXITCODE -ne 0) { return @() }
+    return @($names | Where-Object { $_ })
+}
+
 function Initialize-KitEnvFile {
     $envFile = Get-KitEnvFile
     $exampleFile = Join-Path $script:KitDir '.env.example'
@@ -360,6 +376,15 @@ function Initialize-KitEnvFile {
     }
 
     if (-not (Test-Path -LiteralPath $envFile)) {
+        # New secrets would not match an existing database or the CMS state encrypted with the old
+        # keys, so refuse rather than generate them. Nothing is deleted here.
+        $volumes = @(Get-KitExistingVolumes)
+        if ($volumes.Count -gt 0) {
+            Stop-KitWithError (".env is missing, but this kit's Docker volumes already exist: " +
+                ($volumes -join ', ') + '. Freshly generated secrets would not match the existing ' +
+                "database and encrypted CMS state. Restore the original .env into $script:KitDir, " +
+                'or run ./reset.ps1 to DELETE that data and start fresh.')
+        }
         Write-KitLog 'No .env found. Creating one from .env.example with freshly generated local secrets.'
         Copy-Item -LiteralPath $exampleFile -Destination $envFile
 
@@ -398,6 +423,25 @@ function Initialize-KitEnvFile {
             Write-KitWarn "  $defaultLine"
         }
     }
+}
+
+# Assert-KitPublicOrigin -- PUBLIC_ORIGIN must carry the same port as HTTPS_PORT (none, or :443, for
+# 443). Otherwise the printed URLs, the saved credential files, and the CORS origins all point at
+# the wrong port.
+function Assert-KitPublicOrigin {
+    $port = Get-KitEnvValue -Name 'HTTPS_PORT' -Default '443'
+    $origin = Get-KitEnvValue -Name 'PUBLIC_ORIGIN' -Default 'https://localhost'
+    $trimmed = $origin.TrimEnd('/')
+    $base = $trimmed
+    $effective = '443'
+    if ($trimmed -match '^(.*):([0-9]+)$') {
+        $base = $Matches[1]
+        $effective = $Matches[2]
+    }
+    if ($effective -eq $port) { return }
+    $expected = if ($port -eq '443') { $base } else { "${base}:$port" }
+    Stop-KitWithError ("HTTPS_PORT is $port but PUBLIC_ORIGIN is $origin, which implies port " +
+        "$effective. Set PUBLIC_ORIGIN=$expected in $(Get-KitEnvFile) (or change HTTPS_PORT to match).")
 }
 
 function Initialize-KitCertificates {

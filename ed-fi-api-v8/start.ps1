@@ -61,6 +61,7 @@ if ($Help) {
 Assert-KitDockerRunning
 Assert-KitComposeAvailable
 Initialize-KitEnvFile
+Assert-KitPublicOrigin
 
 if ($Template) {
     $previous = Get-KitEnvValue -Name 'DATABASE_TEMPLATE' -Default 'minimal'

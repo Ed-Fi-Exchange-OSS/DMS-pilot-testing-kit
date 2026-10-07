@@ -32,6 +32,9 @@
 #                                     doesn't exist; otherwise warn (by name) about any variable in
 #                                     .env.example that .env is missing. Never modifies an existing
 #                                     .env value, and never prints a secret value.
+#                                     Refuses (kit_die) to generate new secrets if .env is missing
+#                                     but this kit's Docker volumes still exist.
+#   kit_check_public_origin          kit_die unless PUBLIC_ORIGIN's port matches HTTPS_PORT
 #   kit_ensure_certs                 generate ssl/server.{crt,key} if either is missing
 #   kit_ensure_dirs                  create .runtime/ and ${LOG_DIR:-./logs}/nginx
 #   kit_compose_failures [up-output-file]
@@ -175,14 +178,16 @@ _KIT_DIGIT='0123456789'
 # line, where the VS Code REST Client extension substitutes the placeholder as literal text without
 # urlencoding it. A literal '&' in the secret would be read as a field separator, and a literal '='
 # would make everything after it in that chunk part of the wrong field, corrupting the request.
-_KIT_SPECIAL_FULL='!@#%^*()-_+[]{}:;,.?'
+# No '+' or '%' for the same reason: form decoding turns a literal '+' into a space and reads '%XX'
+# as a percent-escape, so either one would silently change the secret the server compares against.
+_KIT_SPECIAL_FULL='!@#^*()-_[]{}:;,.?'
 # Same set without ';'. POSTGRES_PASSWORD is embedded, unescaped, into semicolon-delimited
 # ADO.NET/Npgsql-style connection strings elsewhere in the kit (compose.core.yml
 # DatabaseSettings__DatabaseConnection and DATABASE_CONNECTION_STRING_ADMIN, and the connection
 # string init/datastore.sh registers with CMS); a literal ';' in the password would truncate or
 # corrupt those. PGADMIN_DEFAULT_PASSWORD and CMS_DATABASE_ENCRYPTION_KEY use the same safe pool
 # out of caution, even though neither is known to need it today.
-_KIT_SPECIAL_SAFE='!@#%^*()-_+[]{}:,.?'
+_KIT_SPECIAL_SAFE='!@#^*()-_[]{}:,.?'
 
 # _kit_random_from_pool <pool> <count> -- <count> characters drawn from <pool> using OpenSSL's CSPRNG
 # (one openssl invocation for the whole batch, not per character). Uniformity has a slight bias from
@@ -266,14 +271,32 @@ kit_generate_secret() {
 # start.sh building blocks (reusable by any future wrapper)
 # ----------------------------------------------------------------------------------------------
 
+# _kit_existing_volumes -- names of this kit's Docker volumes, one per line, found by the Compose
+# project label (the same set `docker compose down -v`, which reset.sh runs, would delete). The
+# project name is KIT_PROJECT_NAME from the environment, else compose.yml's default; with .env
+# missing there is nowhere else to read it from.
+_kit_existing_volumes() {
+    docker volume ls -q --filter "label=com.docker.compose.project=${KIT_PROJECT_NAME:-edfi-pilot}" \
+        2>/dev/null
+}
+
 # kit_ensure_env -- see the public API comment above.
 kit_ensure_env() {
-    local env_file example_file line key missing default_line
+    local env_file example_file line key missing default_line volumes
     env_file=$(_kit_env_file)
     example_file="$KIT_DIR/.env.example"
     [ -f "$example_file" ] || kit_die ".env.example not found in $KIT_DIR"
 
     if [ ! -f "$env_file" ]; then
+        # New secrets would not match an existing database or the CMS state encrypted with the old
+        # keys, so refuse rather than generate them. Nothing is deleted here.
+        volumes=$(_kit_existing_volumes | tr '\n' ' ')
+        if [ -n "$volumes" ]; then
+            kit_die ".env is missing, but this kit's Docker volumes already exist: ${volumes% }." \
+                "Freshly generated secrets would not match the existing database and encrypted CMS" \
+                "state. Restore the original .env into $KIT_DIR, or run ./reset.sh to DELETE that" \
+                "data and start fresh."
+        fi
         kit_log "No .env found. Creating one from .env.example with freshly generated local secrets."
         cp "$example_file" "$env_file"
 
@@ -311,6 +334,33 @@ kit_ensure_env() {
             kit_warn "  $default_line"
         done
     fi
+}
+
+# kit_check_public_origin -- PUBLIC_ORIGIN must carry the same port as HTTPS_PORT (none, or :443,
+# for 443). Otherwise the printed URLs, the saved credential files, and the CORS origins all point
+# at the wrong port.
+kit_check_public_origin() {
+    local port origin trimmed explicit effective base expected
+    port=$(kit_env_get HTTPS_PORT "443")
+    origin=$(kit_env_get PUBLIC_ORIGIN "https://localhost")
+    trimmed="${origin%/}"
+    explicit=""
+    base="$trimmed"
+    case "$trimmed" in
+        *:[0-9]*)
+            explicit="${trimmed##*:}"
+            case "$explicit" in
+                *[!0-9]*) explicit="" ;;
+                *) base="${trimmed%:*}" ;;
+            esac
+            ;;
+    esac
+    effective="${explicit:-443}"
+    [ "$effective" = "$port" ] && return 0
+    expected="$base"
+    [ "$port" = "443" ] || expected="$base:$port"
+    kit_die "HTTPS_PORT is $port but PUBLIC_ORIGIN is $origin, which implies port $effective." \
+        "Set PUBLIC_ORIGIN=$expected in $(_kit_env_file) (or change HTTPS_PORT to match)."
 }
 
 kit_ensure_certs() {
