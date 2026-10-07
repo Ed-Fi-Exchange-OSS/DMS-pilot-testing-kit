@@ -59,8 +59,8 @@ function Stop-WithError {
     exit 1
 }
 
-if (-not $Force -and ((Test-Path $crt) -or (Test-Path $key))) {
-    Stop-WithError ("server.crt or server.key already exists in $sslDir. " +
+if (-not $Force -and (Test-Path $crt) -and (Test-Path $key)) {
+    Stop-WithError ("server.crt and server.key already exist in $sslDir. " +
         'Run again with -Force to replace them.')
 }
 

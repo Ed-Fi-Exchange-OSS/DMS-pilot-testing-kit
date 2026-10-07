@@ -335,7 +335,11 @@ function New-KitSecret {
     $guaranteed = (Get-KitRandomChars $script:KitLower 1) + (Get-KitRandomChars $script:KitUpper 1) +
     (Get-KitRandomChars $script:KitDigit 1) + (Get-KitRandomChars $special 1)
     $rest = Get-KitRandomChars $all ($Length - 4)
-    return Remove-KitLeadingDash (Invoke-KitShuffleString ($guaranteed + $rest))
+    $result = Remove-KitLeadingDash (Invoke-KitShuffleString ($guaranteed + $rest))
+    if ($result.Length -ne $Length) {
+        Stop-KitWithError "secret generation produced $($result.Length) characters instead of $Length"
+    }
+    return $result
 }
 
 function New-KitBase64Key {
@@ -386,15 +390,30 @@ function Initialize-KitEnvFile {
                 'or run ./reset.ps1 to DELETE that data and start fresh.')
         }
         Write-KitLog 'No .env found. Creating one from .env.example with freshly generated local secrets.'
-        Copy-Item -LiteralPath $exampleFile -Destination $envFile
 
-        Set-KitEnvValue -Name 'POSTGRES_PASSWORD' -Value (New-KitSecret -Length 32 -Pool safe)
-        Set-KitEnvValue -Name 'CMS_SERVICE_CLIENT_SECRET' -Value (New-KitSecret -Length 48 -Pool full)
-        Set-KitEnvValue -Name 'CMS_READONLY_CLIENT_SECRET' -Value (New-KitSecret -Length 48 -Pool full)
-        Set-KitEnvValue -Name 'CMS_ADMIN_CLIENT_SECRET' -Value (New-KitSecret -Length 48 -Pool full)
-        Set-KitEnvValue -Name 'CMS_DATABASE_ENCRYPTION_KEY' -Value (New-KitSecret -Length 32 -Pool safe)
-        Set-KitEnvValue -Name 'CMS_IDENTITY_ENCRYPTION_KEY' -Value (New-KitBase64Key -Bytes 32)
-        Set-KitEnvValue -Name 'PGADMIN_DEFAULT_PASSWORD' -Value (New-KitSecret -Length 32 -Pool safe)
+        # Generate every secret before touching .env, so a failure can't leave a half-written file.
+        $secrets = [ordered]@{
+            POSTGRES_PASSWORD           = New-KitSecret -Length 32 -Pool safe
+            CMS_SERVICE_CLIENT_SECRET   = New-KitSecret -Length 48 -Pool full
+            CMS_READONLY_CLIENT_SECRET  = New-KitSecret -Length 48 -Pool full
+            CMS_ADMIN_CLIENT_SECRET     = New-KitSecret -Length 48 -Pool full
+            CMS_DATABASE_ENCRYPTION_KEY = New-KitSecret -Length 32 -Pool safe
+            CMS_IDENTITY_ENCRYPTION_KEY = New-KitBase64Key -Bytes 32
+            PGADMIN_DEFAULT_PASSWORD    = New-KitSecret -Length 32 -Pool safe
+        }
+
+        # Owner-only (0600) before any secret is written; Copy-Item would keep the template's mode.
+        # Windows has no Unix mode bits, so skip it there.
+        [System.IO.File]::WriteAllBytes($envFile, [byte[]]::new(0))
+        if (-not $IsWindows) {
+            [System.IO.File]::SetUnixFileMode($envFile,
+                [System.IO.UnixFileMode]::UserRead -bor [System.IO.UnixFileMode]::UserWrite)
+        }
+        [System.IO.File]::WriteAllBytes($envFile, [System.IO.File]::ReadAllBytes($exampleFile))
+
+        foreach ($name in $secrets.Keys) {
+            Set-KitEnvValue -Name $name -Value $secrets[$name]
+        }
 
         Write-KitLog 'Generated local secrets for POSTGRES_PASSWORD, CMS_SERVICE_CLIENT_SECRET,'
         Write-KitLog 'CMS_READONLY_CLIENT_SECRET, CMS_ADMIN_CLIENT_SECRET, CMS_DATABASE_ENCRYPTION_KEY,'

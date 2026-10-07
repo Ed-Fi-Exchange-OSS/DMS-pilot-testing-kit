@@ -254,7 +254,7 @@ _kit_avoid_leading_dash() {
 
 # kit_generate_secret <length> [full|safe] -- see the pool comments above. <length> must be >= 4.
 kit_generate_secret() {
-    local len="$1" pool_name="${2:-full}" special all guaranteed rest
+    local len="$1" pool_name="${2:-full}" special all guaranteed rest out
     if [ "$pool_name" = "safe" ]; then
         special="$_KIT_SPECIAL_SAFE"
     else
@@ -264,7 +264,15 @@ kit_generate_secret() {
     guaranteed="$(_kit_random_from_pool "$_KIT_LOWER" 1)$(_kit_random_from_pool "$_KIT_UPPER" 1)"
     guaranteed="$guaranteed$(_kit_random_from_pool "$_KIT_DIGIT" 1)$(_kit_random_from_pool "$special" 1)"
     rest="$(_kit_random_from_pool "$all" "$((len - 4))")"
-    _kit_avoid_leading_dash "$(_kit_shuffle_string "$guaranteed$rest")"
+    out="$(_kit_avoid_leading_dash "$(_kit_shuffle_string "$guaranteed$rest")")"
+    # A missing or failing openssl yields empty output with exit 0 inside the pipelines above, so
+    # verify the result instead of trusting it. kit_die can't be used here: callers run this in $().
+    if [ "${#out}" -ne "$len" ]; then
+        printf 'ERROR: secret generation produced %s characters instead of %s; is openssl working?\n' \
+            "${#out}" "$len" >&2
+        return 1
+    fi
+    printf '%s' "$out"
 }
 
 # ----------------------------------------------------------------------------------------------
@@ -283,6 +291,7 @@ _kit_existing_volumes() {
 # kit_ensure_env -- see the public API comment above.
 kit_ensure_env() {
     local env_file example_file line key missing default_line volumes
+    local pg_pw svc_secret ro_secret admin_secret db_key id_key pgadmin_pw
     env_file=$(_kit_env_file)
     example_file="$KIT_DIR/.env.example"
     [ -f "$example_file" ] || kit_die ".env.example not found in $KIT_DIR"
@@ -297,16 +306,31 @@ kit_ensure_env() {
                 "state. Restore the original .env into $KIT_DIR, or run ./reset.sh to DELETE that" \
                 "data and start fresh."
         fi
+        command -v openssl >/dev/null 2>&1 ||
+            kit_die "openssl is required to generate the local secrets but was not found on PATH." \
+                "Install it (for example, apt install openssl) and re-run."
         kit_log "No .env found. Creating one from .env.example with freshly generated local secrets."
-        cp "$example_file" "$env_file"
+        # Generate every secret before touching .env, so a failure can't leave a half-written file.
+        pg_pw=$(kit_generate_secret 32 safe) || kit_die "could not generate POSTGRES_PASSWORD"
+        svc_secret=$(kit_generate_secret 48 full) || kit_die "could not generate CMS_SERVICE_CLIENT_SECRET"
+        ro_secret=$(kit_generate_secret 48 full) || kit_die "could not generate CMS_READONLY_CLIENT_SECRET"
+        admin_secret=$(kit_generate_secret 48 full) || kit_die "could not generate CMS_ADMIN_CLIENT_SECRET"
+        db_key=$(kit_generate_secret 32 safe) || kit_die "could not generate CMS_DATABASE_ENCRYPTION_KEY"
+        id_key=$(openssl rand -base64 32 | tr -d '\n')
+        [ -n "$id_key" ] || kit_die "could not generate CMS_IDENTITY_ENCRYPTION_KEY"
+        pgadmin_pw=$(kit_generate_secret 32 safe) || kit_die "could not generate PGADMIN_DEFAULT_PASSWORD"
 
-        kit_env_set POSTGRES_PASSWORD "$(kit_generate_secret 32 safe)"
-        kit_env_set CMS_SERVICE_CLIENT_SECRET "$(kit_generate_secret 48 full)"
-        kit_env_set CMS_READONLY_CLIENT_SECRET "$(kit_generate_secret 48 full)"
-        kit_env_set CMS_ADMIN_CLIENT_SECRET "$(kit_generate_secret 48 full)"
-        kit_env_set CMS_DATABASE_ENCRYPTION_KEY "$(kit_generate_secret 32 safe)"
-        kit_env_set CMS_IDENTITY_ENCRYPTION_KEY "$(openssl rand -base64 32 | tr -d '\n')"
-        kit_env_set PGADMIN_DEFAULT_PASSWORD "$(kit_generate_secret 32 safe)"
+        # Owner-only from the start: .env holds secrets, and cp would keep the template's mode.
+        (umask 077 && cp "$example_file" "$env_file") || kit_die "could not create $env_file"
+        chmod 600 "$env_file" 2>/dev/null || true
+
+        kit_env_set POSTGRES_PASSWORD "$pg_pw"
+        kit_env_set CMS_SERVICE_CLIENT_SECRET "$svc_secret"
+        kit_env_set CMS_READONLY_CLIENT_SECRET "$ro_secret"
+        kit_env_set CMS_ADMIN_CLIENT_SECRET "$admin_secret"
+        kit_env_set CMS_DATABASE_ENCRYPTION_KEY "$db_key"
+        kit_env_set CMS_IDENTITY_ENCRYPTION_KEY "$id_key"
+        kit_env_set PGADMIN_DEFAULT_PASSWORD "$pgadmin_pw"
 
         kit_log "Generated local secrets for POSTGRES_PASSWORD, CMS_SERVICE_CLIENT_SECRET,"
         kit_log "CMS_READONLY_CLIENT_SECRET, CMS_ADMIN_CLIENT_SECRET, CMS_DATABASE_ENCRYPTION_KEY,"
@@ -450,6 +474,14 @@ _KIT_WAIT_ERROR_RE='container [^ ]+ (has no healthcheck configured|exited \(-?[0
 _KIT_WAIT_ERROR_RE="$_KIT_WAIT_ERROR_RE"'|is unhealthy)'
 _KIT_WAIT_ERROR_RE="$_KIT_WAIT_ERROR_RE"'|service "?[^" ]+"? didn.?t complete successfully'
 
+# Image pull/download failures in `up` output. Compose's raw text for these is a wall of signed CDN
+# URLs, so kit_show_up_failure replaces it with one plain message. The timeout wordings only count
+# when the same line also mentions a registry/URL/pull, so a service's own timeout isn't mistaken
+# for one.
+_KIT_PULL_ERROR_RE='failed to copy|pull access denied|error pulling|failed to resolve reference'
+_KIT_PULL_ERROR_RE="$_KIT_PULL_ERROR_RE"'|(TLS handshake timeout|i/o timeout).*(pull|registry|https?://|resolve)'
+_KIT_PULL_ERROR_RE="$_KIT_PULL_ERROR_RE"'|(pull|registry|https?://|resolve).*(TLS handshake timeout|i/o timeout)'
+
 # _kit_plain_output <file> -- <file> without carriage returns or ANSI color/cursor sequences.
 _kit_plain_output() {
     [ -f "$1" ] || return 0
@@ -589,6 +621,11 @@ kit_show_up_failure() {
     local up_log="$1" errors last failures svc reason
     kit_log ""
     kit_log "Startup did not complete."
+    if _kit_plain_output "$up_log" | grep -qiE "$_KIT_PULL_ERROR_RE"; then
+        kit_log "Docker couldn't download one or more images. Check your network/proxy (try" \
+            "\`docker pull hello-world\`), then re-run start; it is safe to retry."
+        return 0
+    fi
     errors=$(_kit_compose_wait_errors "$up_log")
     if [ -n "$errors" ]; then
         kit_log "Compose reported:"
